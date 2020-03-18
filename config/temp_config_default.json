@@ -1,0 +1,10 @@
+{
+    "bot": {
+        "token": "none",
+        "cmd_prefix": ">>",
+        "delete_msg_after": -1
+    },
+    "autoload extensions": [
+        "extensions.extension_management"
+    ]
+}
