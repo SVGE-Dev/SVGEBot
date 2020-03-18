@@ -1,0 +1,4 @@
+Cog configuration files are stored in <project_root>/extensions/extensions_configs/.
+
+Please ensure that said config files match the name of their respective extensions and
+are contained here regardless of whether or not they are loaded.
