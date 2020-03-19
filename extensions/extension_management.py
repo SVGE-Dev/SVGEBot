@@ -26,8 +26,7 @@ class CogManagementCog(commands.Cog, name="Extension Management"):
     async def load(self, ctx, extension):
         """Loads an inactive extension contained within ./extensions/
 
-        :param extension: Extension name: "<extension_name>", omit the ".py"
-            in the extension filename.
+        :param extension: Extension name, omit the ".py" in the extension filename.
         """
         try:
             self.bot.load_extension(f"extensions.{extension}")
@@ -38,8 +37,7 @@ class CogManagementCog(commands.Cog, name="Extension Management"):
     async def unload(self, extension):
         """Unloads an active extension that is contained within ./extensions/
 
-        :param extension: Extension name: "<extension_name>", omit the ".py"
-            in the extension filename.
+        :param extension: Extension name, omit the ".py" in the extension filename.
         """
         try:
             self.bot.unload_extension(f"extensions.{extension}")
@@ -52,8 +50,7 @@ class CogManagementCog(commands.Cog, name="Extension Management"):
         this is equivalent to unloading and loading an extension, this command
         will roll back to prior state in case of an error.
 
-        :param extension: Extension name: "<extension_name>", omit the ".py"
-            in the extension filename.
+        :param extension: Extension name, omit the ".py" in the extension filename.
         """
         try:
             self.bot.reload_extension(f"extensions.{extension}")
