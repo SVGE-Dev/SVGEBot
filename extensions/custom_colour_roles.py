@@ -47,7 +47,7 @@ class ColourMeCog(commands.Cog, name="Custom Colours"):
         with open("./extensions/extension_configs/custom_colour_roles.json", "r") as cog_config:
             return json.load(cog_config)
 
-    @commands.command(name="colourme refresh")
+    @commands.command(name="colourme refresh", hidden=True)
     @commands.has_permissions(administrator=True)
     async def refresh_config(self):
         self.cog_config = self._get_cog_config
