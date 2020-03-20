@@ -1,11 +1,11 @@
 from discord.ext import commands
+import discord
 import asyncio
 import logging
 
 
 class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
-    """Cog for administrative commands, be these for users or to manage the bot
-    """
+    """Cog for administrative commands, be these for users or to manage the bot"""
     def __init__(self, bot):
         self.bot = bot
         self.logger = logging.getLogger("SVGEBot.AdminUtils")
@@ -37,4 +37,4 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
 
 
 def setup(bot):
-    bot.add_cog(AdminUtilsCog)
+    bot.add_cog(AdminUtilsCog(bot))
