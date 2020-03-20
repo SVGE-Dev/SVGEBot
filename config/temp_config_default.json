@@ -6,6 +6,8 @@
         "admin_role_id_list": []
     },
     "autoload extensions": [
-        "extensions.extension_management"
+        "extensions.extension_management",
+        "extensions.bot_admin_utils",
+        "extensions.custom_colour_roles"
     ]
 }
