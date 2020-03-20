@@ -31,9 +31,10 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
     @commands.command()
     async def shutdown(self, ctx):
         """Shuts the bot process down gracefully."""
+        await ctx.send(":wave:", delete_after=1)
+        await asyncio.sleep(2)
         await self.bot.logout()
         self.logger.info("Logged out and closed Discord API connection")
-        await asyncio.sleep(5)
         self.logger.info("Closing process")
         exit(0)
 
