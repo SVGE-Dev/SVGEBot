@@ -5,7 +5,10 @@ import logging
 
 
 class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
-    """Cog for administrative commands, be these for users or to manage the bot"""
+    """Cog for administrative commands, be these for users or to manage the bot.
+
+    All commands within this cog require administrative permissions or admin-like roles
+    """
     def __init__(self, bot):
         self.bot = bot
         self.logger = logging.getLogger("SVGEBot.AdminUtils")
@@ -17,12 +20,10 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
 
         It will be called without the need for check decorators on every command.
         """
-        sender_is_admin = False
         for role in ctx.message.author.roles:
             if role.id in self.bot.bot_config["admin_role_id_list"]:
-                sender_is_admin = True
-                break
-        return sender_is_admin
+                return True
+        return False
 
     def cog_unload(self):
         self.logger.info("Unloaded AdminUtils")
