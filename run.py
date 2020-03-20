@@ -23,9 +23,13 @@ async def on_message(message):
     if message.author.bot:
         return
     try:
-        await svgebot.process_commands(message)
+        if message.content.startswith(svgebot.bot_config["cmd_prefix"]):
+            async with message.channel.typing():
+                await message.delete()
+                logger.debug(f"Command: '{message.content}' from: '{message.author}'")
+                await svgebot.process_commands(message)
     except commands.errors.CheckFailure as check_fail:
-        logger.debug("User {0.name}#{0.discriminator} sent the command {1}, which failed "
+        logger.debug("User {0} sent the command {1}, which failed "
                      "command checks with: \n{2}".format(message.author,
                                                          message.content,
                                                          check_fail))
