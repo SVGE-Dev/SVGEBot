@@ -1,13 +1,12 @@
 {
-    "protected_role_id_list": [
-
-    ],
-    "extra_exclusion_colours": [
-        "99AAB5",
-        "9D4037",
-        "2B2B2B",
-        "212121"
-    ],
+    "extra_exclusion_colours": {
+        "689929555523535054": [
+            "99AAB5",
+            "9D4037",
+            "2B2B2B",
+            "212121"
+        ]
+    },
     "exclusion_side_length": 45,
     "colour_req_role_id_list": {
         "689929555523535054": [
