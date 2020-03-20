@@ -3,6 +3,7 @@ import logging
 import os
 import pytz
 import json
+from copy import deepcopy
 from datetime import datetime
 from shutil import copyfile
 
@@ -14,7 +15,7 @@ svgebot = commands.Bot(command_prefix="placeholder")
 
 @svgebot.event
 async def on_ready():
-    logger.info("Bot ready")
+    logger.info("SVGEBot ready")
 
 
 @svgebot.event
@@ -61,6 +62,12 @@ if __name__ == "__main__":
 
     svgebot.command_prefix = temp_config_json["bot"]["cmd_prefix"]
     logger.info(f"Set command prefix to: {temp_config_json['bot']['cmd_prefix']}")
+
+    config_for_bot_dist = deepcopy(temp_config_json)
+    # Remove the token from the data that's distributed to cogs
+    del config_for_bot_dist["bot"]["token"]
+
+    svgebot.bot_config = config_for_bot_dist["bot"]
 
     cogs_loaded_counter = 0
     for cog_to_load in os.listdir("./extensions/"):
