@@ -22,7 +22,16 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot:
         return
-    await svgebot.process_commands(message)
+    try:
+        await svgebot.process_commands(message)
+    except commands.errors.CheckFailure as check_fail:
+        logger.debug("User {0.name}#{0.discriminator} sent the command {1}, which failed "
+                     "command checks with: \n{2}".format(message.author,
+                                                         message.content,
+                                                         check_fail))
+        await message.channel.send("You do not have the permissions "
+                                   "required for this command",
+                                   delete_after=svgebot.delete_msg_after)
 
 
 if __name__ == "__main__":
@@ -48,7 +57,7 @@ if __name__ == "__main__":
     logger.addHandler(file_log)
     logger.addHandler(console_log)
 
-    logger.info("Logging ready")
+    logger.debug("Logging ready")
 
     if not os.path.exists("./config/temp_config.json"):
         copyfile("./config/temp_config_default.json", "./config/temp_config.json")
@@ -58,7 +67,7 @@ if __name__ == "__main__":
         temp_config_json = json.load(config_file)
     if temp_config_json["bot"]["delete_msg_after"] == -1:
         temp_config_json["bot"]["delete_msg_after"] = None
-    logger.info("Loaded config variables")
+    logger.debug("Loaded config variables")
 
     svgebot.command_prefix = temp_config_json["bot"]["cmd_prefix"]
     logger.info(f"Set command prefix to: {temp_config_json['bot']['cmd_prefix']}")
@@ -68,11 +77,12 @@ if __name__ == "__main__":
     del config_for_bot_dist["bot"]["token"]
 
     svgebot.bot_config = config_for_bot_dist["bot"]
+    svgebot.delete_msg_after = config_for_bot_dist["bot"]["delete_msg_after"]
 
     cogs_loaded_counter = 0
     for cog_to_load in os.listdir("./extensions/"):
         if cog_to_load.endswith(".py"):
-            logger.info(f"Found {cog_to_load[:-3]}")
+            logger.debug(f"Found {cog_to_load[:-3]}")
             if f"extensions.{cog_to_load[:-3]}" in temp_config_json["autoload extensions"]:
                 try:
                     svgebot.load_extension(f"extensions.{cog_to_load[:-3]}")
@@ -81,12 +91,12 @@ if __name__ == "__main__":
                     logger.warning(f"Failed to load extension: {cog_to_load[:-3]}\n\n"
                                    f"{e}")
     if cogs_loaded_counter != 0:
-        logger.info(f"Found and autoloaded {cogs_loaded_counter} extension(s)")
+        logger.debug(f"Auto-loaded {cogs_loaded_counter} extension(s)")
     else:
         logger.warning("Autoloaded no extensions in ./extensions/, this will cause "
                        "major losses in bot functionality")
 
-    logger.info("Bot process starting")
+    logger.debug("Bot process starting")
 
     try:
         svgebot.run(temp_config_json["bot"]["token"], reconnect=True)
