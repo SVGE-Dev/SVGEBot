@@ -10,6 +10,7 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
         self.bot = bot
         self.logger = logging.getLogger("SVGEBot.AdminUtils")
         self.delete_message_after = self.bot.bot_config["delete_msg_after"]
+        self.logger.info("Loaded AdminUtils")
 
     async def cog_check(self, ctx):
         """This method is a cog wide check to ensure users have "admin" roles,
@@ -23,12 +24,12 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
                 break
         return sender_is_admin
 
+    def cog_unload(self):
+        self.logger.info("Unloaded AdminUtils")
+
     @commands.command()
     async def shutdown(self, ctx):
         """Shuts the bot process down gracefully."""
-        for cog in self.bot.cogs:
-            self.bot.unload_extension(cog[0])
-            self.logger.info(f"Unloaded {cog[0]}")
         await self.bot.logout()
         self.logger.info("Logged out and closed Discord API connection")
         await asyncio.sleep(5)
