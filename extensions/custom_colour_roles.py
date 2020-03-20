@@ -8,6 +8,9 @@ from discord.ext import commands, tasks
 
 
 class ColourMeCog(commands.Cog, name="Custom Colours"):
+    """Cog for custom colour assignment, specific roles are often required
+    for said roles.
+    """
     def __init__(self, bot):
         self.bot = bot
         self.logger = logging.getLogger("CustomColours")
@@ -22,7 +25,22 @@ class ColourMeCog(commands.Cog, name="Custom Colours"):
     @tasks.loop(seconds=60.0)
     async def colour_role_check_loop(self):
         for guild in self.bot.guilds:
+            await self._revoke_invalid_colour_role_users(guild)
             await self._clean_colour_roles(guild)
+
+    async def _revoke_invalid_colour_role_users(self, guild):
+        colour_permitted_roles = self.cog_config[str(guild.id)]
+        for role in guild.roles:
+            if "SVGE[0x" in role.name:
+                for member in role.members:
+                    member_has_req_roles = False
+                    for member_role in member.roles:
+                        if member_role.id in colour_permitted_roles:
+                            member_has_req_roles = True
+                            break
+                    if not member_has_req_roles:
+                        await member.remove_roles(role,
+                                                  reason="Automatic colour role removal by SVGEBot")
 
     @property
     def _get_cog_config(self):
@@ -43,7 +61,7 @@ class ColourMeCog(commands.Cog, name="Custom Colours"):
             if "SVGE[0x" in crole.name:
                 if not crole.members:
                     await crole.delete(reason="Automatic custom colour deletion when unused.")
-        self.logger.info("Cleaned out empty colour roles")
+        self.logger.debug("Cleaned out empty colour roles")
 
     def _valid_colour_roles_string_gen(self, guild_id):
         basestring = ""
