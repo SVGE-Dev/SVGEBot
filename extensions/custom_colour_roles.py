@@ -197,6 +197,9 @@ class ColourMeCog(commands.Cog, name="Custom Colours"):
         await ctx.author.add_roles(new_colour_role,
                                    reason="Automatic custom colour allocation by request.")
 
+        self.logger.debug(f"Assigned colour role: {new_colour_role.name} to "
+                          f"{ctx.message.author.name}#{ctx.message.author.discriminator}.")
+
         await self._clean_colour_roles(ctx.guild)
 
 
