@@ -9,6 +9,7 @@ class CogManagementCog(commands.Cog, name="Extension Management"):
     def __init__(self, bot):
         self.bot = bot
         self.logger = logging.getLogger("SVGEBot.ExtensionManagement")
+        self.logger.info("Loaded ExtensionManagement")
 
     @commands.group(name="extension")
     @commands.has_permissions(administrator=True)
@@ -21,6 +22,9 @@ class CogManagementCog(commands.Cog, name="Extension Management"):
         if ctx.invoked_subcommand is None:
             self.logger.info("Command: {0.content} from {0.author} in {0.guild} {0.channel} "
                              "had no sub-command.".format(ctx.message))
+
+    def cog_unload(self):
+        self.logger.info("Unloaded ExtensionManagement")
 
     @grp_extension.command()
     async def load(self, ctx, extension):
