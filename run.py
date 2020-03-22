@@ -36,6 +36,10 @@ async def on_message(message):
         await message.channel.send("You do not have the permissions "
                                    "required for this command",
                                    delete_after=svgebot.delete_msg_after)
+    except commands.errors.CommandNotFound as cmd_not_found:
+        logger.debug(f"Command Not Found Error: \n{cmd_not_found}.")
+        await message.channel.send(f'Command "{message.content}" does not exist.',
+                                   delete_after=svgebot.delete_msg_after)
 
 
 if __name__ == "__main__":
@@ -47,7 +51,7 @@ if __name__ == "__main__":
         print("Created ./logs/ folder for persistent logging")
 
     logger = logging.getLogger("SVGEBot")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     formatter = logging.Formatter('[{asctime}] [{levelname:}] {name}: {message}',
                                   '%Y-%m-%d %H:%M:%S', style='{')
 
