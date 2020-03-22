@@ -5,9 +5,19 @@
         "delete_msg_after": -1,
         "admin_role_id_list": []
     },
+    "logging_level": "INFO",
+    "possible_logging_levels": [
+        "DEBUG",
+        "INFO",
+        "WARN",
+        "WARNING",
+        "ERROR"
+    ],
     "autoload extensions": [
         "extensions.extension_management",
         "extensions.bot_admin_utils",
-        "extensions.custom_colour_roles"
+        "extensions.custom_colour_roles",
+        "extensions.member_monitoring",
+        "extensions.db_conn"
     ]
 }
