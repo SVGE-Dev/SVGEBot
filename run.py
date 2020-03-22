@@ -52,6 +52,14 @@ if __name__ == "__main__":
 
     logger = logging.getLogger("SVGEBot")
     logger.setLevel(logging.INFO)
+
+    if not os.path.exists("./config/temp_config.json"):
+        copyfile("./config/temp_config_default.json", "./config/temp_config.json")
+        logger.warning("Config was missing, copied config template")
+
+    with open("./config/temp_config.json", "r") as config_file:
+        temp_config_json = json.load(config_file)
+
     formatter = logging.Formatter('[{asctime}] [{levelname:}] {name}: {message}',
                                   '%Y-%m-%d %H:%M:%S', style='{')
 
@@ -67,12 +75,21 @@ if __name__ == "__main__":
 
     logger.debug("Logging ready")
 
-    if not os.path.exists("./config/temp_config.json"):
-        copyfile("./config/temp_config_default.json", "./config/temp_config.json")
-        logger.warning("Config was missing, copied config template")
+    possible_logging_levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARN,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
+    }
 
-    with open("./config/temp_config.json", "r") as config_file:
-        temp_config_json = json.load(config_file)
+    try:
+        logger.setLevel(possible_logging_levels[temp_config_json["logging_level"]])
+    except KeyError:
+        logger.exception("Selected logging level not supported")
+        input()
+        exit(1)
+
     if temp_config_json["bot"]["delete_msg_after"] == -1:
         temp_config_json["bot"]["delete_msg_after"] = None
     logger.debug("Loaded config variables")
