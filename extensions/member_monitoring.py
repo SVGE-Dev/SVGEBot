@@ -6,11 +6,17 @@ from discord.ext import commands
 class MemberMonitoring(commands.Cog, name="Member Monitoring"):
     def __init__(self, bot):
         self.bot = bot
+        self.db_pool_cog = None
+        self.db_conn = None
         self.logger = logging.getLogger("SVGEBot.MemberMonitoring")
         self.logger.info("Loaded MemberMonitoring")
 
     def cog_unload(self):
         self.logger.info("Unloaded MemberMonitoring")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        self.db_pool_cog = self.bot.get_cog("DBConnPool")
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
