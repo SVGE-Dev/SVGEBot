@@ -29,10 +29,10 @@ async def on_message(message):
                 logger.debug(f"Command: '{message.content}' from: '{message.author}'")
                 await svgebot.process_commands(message)
     except commands.errors.CheckFailure as check_fail:
-        logger.debug("User {0} sent the command {1}, which failed "
-                     "command checks with: \n{2}".format(message.author,
-                                                         message.content,
-                                                         check_fail))
+        logger.info("User {0} sent the command {1}, which failed "
+                    "command checks with: \n{2}".format(message.author,
+                                                        message.content,
+                                                        check_fail))
         await message.channel.send("You do not have the permissions "
                                    "required for this command",
                                    delete_after=svgebot.delete_msg_after)
