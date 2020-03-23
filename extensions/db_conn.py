@@ -8,20 +8,22 @@ from shutil import copyfile
 from discord.ext import commands, tasks
 
 
-class DBConnPool(commands.Cog, name="Database Connection Pool"):
+class DBConnPool(commands.Cog):
     """Cog that offers aioMySQL connections from an internally managed
     pool. This is a dependency cog and should not contain any commands
     for the end user.
 
     If your cog needs to use the common database pool, do the following:
-        1) Establish a database connection from the pool by addressing:
+        1) Get this cog from the bot using the `bot.get_cog("DBConnPool")` method,
+            which will yield this cog as initialised by the bot.
+        2) Establish a database connection from the pool by addressing:
             the acquire_db_connection() coroutine, which will return your
             connection object.
-        2) Ensure your usage of said connection object is somewhat active,
+        3) Ensure your usage of said connection object is somewhat active,
             and that you keep it alive with the connection.ping(reconnect=True)
             coroutine, as connections that are unused for over three minutes will be
             freed up for re-allocation.
-        3) Allow your connection to be freed in the case of it not being needed, to
+        4) Allow your connection to be freed in the case of it not being needed, to
             reduce resource usage and requirements."""
     def __init__(self, bot):
         self.bot = bot
