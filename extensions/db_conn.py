@@ -13,6 +13,11 @@ class DBConnPool(commands.Cog):
     pool. This is a dependency cog and should not contain any commands
     for the end user.
 
+    Ideally please use the "with... as..." implementation of acquire_db_connection()
+    as this will automatically release the connection once you are done using it,
+    saving time and space from the calamity of all ten connections in the pool being
+    in active use.
+
     If your cog needs to use the common database pool, do the following:
         1) Get this cog from the bot using the `bot.get_cog("DBConnPool")` method,
             which will yield this cog as initialised by the bot.
@@ -24,7 +29,8 @@ class DBConnPool(commands.Cog):
             coroutine, as connections that are unused for over three minutes will be
             freed up for re-allocation.
         4) Allow your connection to be freed in the case of it not being needed, to
-            reduce resource usage and requirements."""
+            reduce resource usage and requirements.
+    """
     def __init__(self, bot):
         self.bot = bot
         self.event_loop = asyncio.get_event_loop()
@@ -34,6 +40,15 @@ class DBConnPool(commands.Cog):
         self.__get_config()
         self.__local_conn_pool = None
         self.logger.info("Loaded DBConnPool")
+
+    async def shutdown(self):
+        self.__local_conn_pool.close()
+        self.logger.info("Database connection pool closing")
+        await self.__local_conn_pool.wait_closed()
+        self.logger.info("Database connection pool closed")
+
+    def cog_unload(self):
+        self.logger.info("Unloaded DBConnPool")
 
     def __get_config(self, run_counter=0):
         cog_conf_location = "./extensions/extension_configs/db_conn_config.json"
@@ -57,9 +72,39 @@ class DBConnPool(commands.Cog):
                 input()
                 exit(1)
 
+    async def __create_guild_database(self, guild_list):
+        db_connection = await self.acquire_db_connection()
+        guild_table_names = []
+        for guild in guild_list:
+            guild_table_names.append("guild_"+str(guild.id))
+
+        async with db_connection.cursor() as db_cursor:
+            tab_search_query = """SELECT SCHEMA_NAME
+                FROM information_schema.SCHEMATA
+                WHERE SCHEMA_NAME = %s"""
+            await db_cursor.executemany(
+                tab_search_query,
+                guild_table_names
+            )
+            db_check_results = await db_cursor.fetchmany()
+            db_to_create = []
+            for i in range(len(db_check_results)):
+                db_to_create.append(guild_table_names[i])
+            await db_cursor.executemany(
+                """CREATE DATABASE `%s`""",
+                db_to_create
+            )
+            # self.logger.info(f"Created new Database for {guild.name} ({guild.id})")
+
     @commands.Cog.listener()
     async def on_ready(self):
         await self.__acquire_db_pool()
+        await self.__create_guild_database(self.bot.guilds)
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild):
+        self.logger.debug(f"Joined guild {guild.name} ({guild.id})")
+        await self.__create_guild_database([guild])
 
     @tasks.loop(minutes=3)
     async def __ping_all_connections(self):
@@ -89,6 +134,7 @@ class DBConnPool(commands.Cog):
                 self.__local_conn_pool = await aiomysql.create_pool(
                     **self.cog_config["_db"]
                 )
+                self.logger.info("Database connection pool acquired")
             except BaseException as connection_exception:
                 self.logger.exception(f"Exception when connecting to database:"
                                       f"\n{connection_exception}\n\n "
@@ -103,6 +149,7 @@ class DBConnPool(commands.Cog):
         it from the handler.
 
         :rtype: aiomysql.Connection()"""
+        await self.__acquire_db_pool()
         connection_to_offer = await self.__local_conn_pool.acquire()
         self.__open_connection_list[connection_to_offer] = deepcopy(connection_to_offer.last_usage)
         self.logger.info("Established database connection object")
