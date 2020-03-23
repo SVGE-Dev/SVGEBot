@@ -11,9 +11,14 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
     """
     def __init__(self, bot):
         self.bot = bot
+        self.db_conn_cog = None
         self.logger = logging.getLogger("SVGEBot.AdminUtils")
         self.delete_message_after = self.bot.bot_config["delete_msg_after"]
         self.logger.info("Loaded AdminUtils")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        self.db_conn_cog = self.bot.get_cog("DBConnPool")
 
     async def cog_check(self, ctx):
         """This method is a cog wide check to ensure users have "admin" roles,
@@ -32,6 +37,10 @@ class AdminUtilsCog(commands.Cog, name="Admin Utilities"):
     async def shutdown(self, ctx):
         """Shuts the bot process down gracefully."""
         await ctx.send(":wave:", delete_after=1)
+        try:
+            await self.db_conn_cog.shutdown()
+        except NameError:
+            pass
         await asyncio.sleep(2)
         await self.bot.logout()
         self.logger.info("Logged out and closed Discord API connection")
