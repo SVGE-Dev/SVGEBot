@@ -11,7 +11,18 @@ from discord.ext import commands, tasks
 class DBConnPool(commands.Cog, name="Database Connection Pool"):
     """Cog that offers aioMySQL connections from an internally managed
     pool. This is a dependency cog and should not contain any commands
-    for the end user."""
+    for the end user.
+
+    If your cog needs to use the common database pool, do the following:
+        1) Establish a database connection from the pool by addressing:
+            the acquire_db_connection() coroutine, which will return your
+            connection object.
+        2) Ensure your usage of said connection object is somewhat active,
+            and that you keep it alive with the connection.ping(reconnect=True)
+            coroutine, as connections that are unused for over three minutes will be
+            freed up for re-allocation.
+        3) Allow your connection to be freed in the case of it not being needed, to
+            reduce resource usage and requirements."""
     def __init__(self, bot):
         self.bot = bot
         self.event_loop = asyncio.get_event_loop()
@@ -84,6 +95,12 @@ class DBConnPool(commands.Cog, name="Database Connection Pool"):
                 exit(1)
 
     async def acquire_db_connection(self):
+        """Returns a database connection object, which will be handled by this pool handler
+        object. When using connection objects offered by this pool handler, ensure you plan for
+        the contingency where your connection object has been freed and you need to re-request
+        it from the handler.
+
+        :rtype: aiomysql.Connection()"""
         connection_to_offer = await self.__local_conn_pool.acquire()
         self.__open_connection_list[connection_to_offer] = deepcopy(connection_to_offer.last_usage)
         self.logger.info("Established database connection object")
