@@ -5,6 +5,7 @@
         "user": "",
         "password": "",
         "connect_timeout": 30,
-        "autocommit": true
+        "autocommit": true,
+        "charset": "utf8mb4"
     }
 }
