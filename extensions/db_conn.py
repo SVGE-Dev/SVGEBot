@@ -1,8 +1,10 @@
 import asyncio
 import aiomysql
 import logging
+import warnings
 import json
 import os
+import datetime
 from copy import deepcopy
 from shutil import copyfile
 from discord.ext import commands, tasks
@@ -13,38 +15,30 @@ class DBConnPool(commands.Cog):
     pool. This is a dependency cog and should not contain any commands
     for the end user.
 
-    Ideally please use the "with... as..." implementation of acquire_db_connection()
+    Ideally please use the "with... as..." implementation of self.acquire()
     as this will automatically release the connection once you are done using it,
     saving time and space from the calamity of all ten connections in the pool being
     in active use.
-
-    If your cog needs to use the common database pool, do the following:
-        1) Get this cog from the bot using the `bot.get_cog("DBConnPool")` method,
-            which will yield this cog as initialised by the bot.
-        2) Establish a database connection from the pool by addressing:
-            the acquire_db_connection() coroutine, which will return your
-            connection object.
-        3) Ensure your usage of said connection object is somewhat active,
-            and that you keep it alive with the connection.ping(reconnect=True)
-            coroutine, as connections that are unused for over three minutes will be
-            freed up for re-allocation.
-        4) Allow your connection to be freed in the case of it not being needed, to
-            reduce resource usage and requirements.
     """
     def __init__(self, bot):
         self.bot = bot
         self.event_loop = asyncio.get_event_loop()
         self.logger = logging.getLogger("SVGEBot.DBConn")
         self.cog_config = None
+        self.__guild_db_list = []
         self.__open_connection_list = {}
         self.__get_config()
-        self.__local_conn_pool = None
+        self.conn_pool = None
         self.logger.info("Loaded DBConnPool")
 
+    @property
+    def guild_db_list(self):
+        return self.__guild_db_list
+
     async def shutdown(self):
-        self.__local_conn_pool.close()
+        self.conn_pool.terminate()
         self.logger.info("Database connection pool closing")
-        await self.__local_conn_pool.wait_closed()
+        await self.conn_pool.wait_closed()
         self.logger.info("Database connection pool closed")
 
     def cog_unload(self):
@@ -72,66 +66,108 @@ class DBConnPool(commands.Cog):
                 input()
                 exit(1)
 
-    async def __create_guild_database(self, guild_list):
-        db_connection = await self.acquire_db_connection()
+    async def __create_guild_member_tables(self):
+        async with self.conn_pool.acquire() as db_connection:
+            async with db_connection.cursor() as db_cursor:
+                create_guild_member_table_query = """
+                CREATE TABLE IF NOT EXISTS guild_members (
+                    discord_user_id INT NOT NULL,
+                    discord_username VARCHAR(37),
+                    memberships TEXT,
+                    verified BOOLEAN,
+                    PRIMARY KEY ( discord_user_id )
+                )"""
+                create_guild_verification_table_query = """
+                CREATE TABLE IF NOT EXISTS member_verification (
+                    discord_user_id INT NOT NULL,
+                    email VARCHAR(320),
+                    verification_key CHAR(10),
+                    last_verification_req DATETIME,
+                    PRIMARY KEY ( discord_user_id )
+                )
+                """
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    for guild_db_name in self.guild_db_list:
+                        await db_cursor.execute("""USE `%s`""", guild_db_name)
+                        await db_cursor.execute(create_guild_member_table_query)
+                        await db_cursor.execute(create_guild_verification_table_query)
+
+    async def __create_guild_databases(self, guild_list):
+        """This coroutine will create databases for guilds with regular
+        names, if and only if they do not already exist, the first query
+        searches for databases of names corresponding to their guild,
+        then databases will be made for all queries that return nothing.
+        """
         guild_table_names = []
         for guild in guild_list:
             guild_table_names.append("guild_"+str(guild.id))
+        async with self.conn_pool.acquire() as db_connection:
+            async with db_connection.cursor() as db_cursor:
+                tab_search_query = """SELECT SCHEMA_NAME
+                    FROM information_schema.SCHEMATA
+                    WHERE SCHEMA_NAME = %s"""
+                await db_cursor.execute(
+                    tab_search_query,
+                    "all_user_db"
+                )
 
-        async with db_connection.cursor() as db_cursor:
-            tab_search_query = """SELECT SCHEMA_NAME
-                FROM information_schema.SCHEMATA
-                WHERE SCHEMA_NAME = %s"""
-            await db_cursor.executemany(
-                tab_search_query,
-                guild_table_names
-            )
-            db_check_results = await db_cursor.fetchmany()
-            db_to_create = []
-            for i in range(len(db_check_results)):
-                db_to_create.append(guild_table_names[i])
-            await db_cursor.executemany(
-                """CREATE DATABASE `%s`""",
-                db_to_create
-            )
-            # self.logger.info(f"Created new Database for {guild.name} ({guild.id})")
+                await db_cursor.executemany(
+                    tab_search_query,
+                    guild_table_names
+                )
+                db_check_results = await db_cursor.fetchmany()
+                db_to_create = []
+                for i in range(len(db_check_results)):
+                    db_to_create.append(guild_table_names[i])
+                await db_cursor.executemany(
+                    """CREATE DATABASE `%s`""",
+                    db_to_create
+                )
+        seen_guilds = set(self.guild_db_list)
+        for guild_db_name in guild_table_names:
+            if guild_db_name not in seen_guilds:
+                self.__guild_db_list.append(guild_table_names)
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.__acquire_db_pool()
-        await self.__create_guild_database(self.bot.guilds)
+        await self.__create_guild_databases(self.bot.guilds)
+        await self.__create_guild_member_tables()
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
         self.logger.debug(f"Joined guild {guild.name} ({guild.id})")
-        await self.__create_guild_database([guild])
+        await self.__create_guild_databases([guild])
+        await self.__create_guild_member_tables()
 
-    @tasks.loop(minutes=3)
-    async def __ping_all_connections(self):
-        """Ongoing task that slims down the number of connection objects within
-        this pool, all free connections will be removed, every three minutes,
-        all inactive connections that are not free (unused for over 2 minutes)
-        will be released and made "free" connections, all connections that have
-        been used minimally in the last three minutes will be pinged and have a
-        reconnect attempt made."""
-        # Close all "free" connections
-        await self.__local_conn_pool.clear()
-        # Iterate and release, or ping all "in-use" connections
-        for connection, old_last_used in self.__open_connection_list.items():
-            if connection.last_used - old_last_used > 120.0:
-                # We're going to release connections that have been unused for
-                # over 120 seconds.
-                self.__local_conn_pool.release(connection)
-                del self.__open_connection_list[connection]
-                self.logger.info("Released connection due to inactivity")
-            else:
-                await connection.ping(reconnect=True)
-                self.__open_connection_list[connection] = deepcopy(connection.last_usage)
+    # @tasks.loop(seconds=30)
+    # async def __ping_all_connections(self):
+    #     """Ongoing task that slims down the number of connection objects within
+    #     this pool, all free connections will be removed, every three minutes,
+    #     all inactive connections that are not free (unused for over 15 seconds)
+    #     will be released and made "free" connections, all connections that have
+    #     been used minimally in the last three minutes will be pinged and have a
+    #     reconnect attempt made."""
+    #     # Close all "free" connections
+    #     await self.__local_conn_pool.clear()
+    #     self.logger.debug("Connection maintenance loop.")
+    #     # Iterate and release, or ping all "in-use" connections
+    #     for connection, old_last_used in self.__open_connection_list.items():
+    #         if connection.last_used - old_last_used > 15:
+    #             # We're going to release connections that have been unused for
+    #             # over 15 seconds.
+    #             self.__local_conn_pool.release(connection)
+    #             del self.__open_connection_list[connection]
+    #             self.logger.info("Released connection due to inactivity")
+    #         else:
+    #             await connection.ping(reconnect=True)
+    #             self.__open_connection_list[connection] = deepcopy(connection.last_usage)
 
     async def __acquire_db_pool(self):
-        if self.__local_conn_pool is None:
+        if self.conn_pool is None:
             try:
-                self.__local_conn_pool = await aiomysql.create_pool(
+                self.conn_pool = await aiomysql.create_pool(
                     **self.cog_config["_db"]
                 )
                 self.logger.info("Database connection pool acquired")
@@ -141,19 +177,6 @@ class DBConnPool(commands.Cog):
                                       f"check your configuration and try again.")
                 input()
                 exit(1)
-
-    async def acquire_db_connection(self):
-        """Returns a database connection object, which will be handled by this pool handler
-        object. When using connection objects offered by this pool handler, ensure you plan for
-        the contingency where your connection object has been freed and you need to re-request
-        it from the handler.
-
-        :rtype: aiomysql.Connection()"""
-        await self.__acquire_db_pool()
-        connection_to_offer = await self.__local_conn_pool.acquire()
-        self.__open_connection_list[connection_to_offer] = deepcopy(connection_to_offer.last_usage)
-        self.logger.info("Established database connection object")
-        return connection_to_offer
 
 
 def setup(bot):
