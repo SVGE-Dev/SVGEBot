@@ -49,12 +49,21 @@ class DBConnPool(commands.Cog):
     def cog_unload(self):
         self.logger.info("Unloaded DBConnPool")
 
+    @staticmethod
+    def __gen_bidirectional_aliases(raw_config):
+        """Quick and dirty method to create a reversed guild alias
+        dictionary."""
+        raw_config["guild_aliases_reversed"] = {}
+        for key, value in raw_config["guild_aliases"].items():
+            raw_config["guild_aliases_reversed"][value] = key
+        return raw_config
+
     def __get_config(self, run_counter=0):
         cog_conf_location = "./extensions/extension_configs/db_conn_config.json"
         default_cog_conf_loc = "./extensions/extension_configs/db_conn_config_default.json"
         if os.path.exists(cog_conf_location):
             with open(cog_conf_location) as cog_config_obj:
-                self.cog_config = json.load(cog_config_obj)
+                self.cog_config = self.__gen_bidirectional_aliases(json.load(cog_config_obj))
         else:
             self.logger.warning("Main config not found, copying default config"
                                 "and attempting to use instead.")
@@ -86,7 +95,7 @@ class DBConnPool(commands.Cog):
                 CREATE TABLE IF NOT EXISTS member_verification (
                     discord_user_id VARCHAR(18) NOT NULL,
                     email VARCHAR(320),
-                    verification_key CHAR(10),
+                    verification_key VARCHAR(64),
                     last_verification_req DATETIME,
                     PRIMARY KEY ( discord_user_id )
                 )
