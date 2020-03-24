@@ -25,7 +25,8 @@ async def on_message(message):
     try:
         if message.content.startswith(svgebot.bot_config["cmd_prefix"]):
             async with message.channel.typing():
-                await message.delete()
+                if message.channel != message.author.dm_channel:
+                    await message.delete()
                 logger.debug(f"Command: '{message.content}' from: '{message.author}'")
                 await svgebot.process_commands(message)
     except commands.errors.CheckFailure as check_fail:
