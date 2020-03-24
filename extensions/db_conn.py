@@ -115,12 +115,18 @@ class DBConnPool(commands.Cog):
                         WHERE SCHEMA_NAME = %s;"""
                     await db_cursor.execute(
                         tab_search_query,
-                        "'all_user_db'"
+                        "'general_bot_db'"
                     )
                     if not bool(await db_cursor.fetchmany()):
                         await db_cursor.execute(
-                            """CREATE DATABASE IF NOT EXISTS `%s`""",
-                            "all_user_db"
+                            """CREATE DATABASE IF NOT EXISTS `%(db_name)s`;
+                            USE `%(db_name)s`;
+                            CREATE TABLE IF NOT EXISTS user_tracking_table (
+                                discord_user_id VARCHAR(18) NOT NULL,
+                                in_guilds TEXT,
+                                PRIMARY KEY ( discord_user_id )
+                            )""",
+                            {"db_name": "general_bot_db"}
                         )
 
                     await db_cursor.executemany(
@@ -131,7 +137,6 @@ class DBConnPool(commands.Cog):
                     db_to_create = []
                     for i in range(len(db_check_results)):
                         db_to_create.append(guild_database_names[i])
-                    self.logger.debug(f"Creating databases for {db_to_create}")
                     await db_cursor.executemany(
                         """CREATE DATABASE IF NOT EXISTS `%s`""",
                         guild_database_names
