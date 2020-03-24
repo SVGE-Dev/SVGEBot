@@ -18,6 +18,8 @@
         "extensions.bot_admin_utils",
         "extensions.custom_colour_roles",
         "extensions.member_monitoring",
-        "extensions.db_conn"
+        "extensions.db_conn",
+        "extensions.user_verification",
+        "extensions.member_monitoring"
     ]
 }
