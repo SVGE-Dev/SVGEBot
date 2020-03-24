@@ -25,11 +25,16 @@ class DBConnPool(commands.Cog):
         self.event_loop = asyncio.get_event_loop()
         self.logger = logging.getLogger("SVGEBot.DBConn")
         self.cog_config = None
+        self.__guild_dbs_ready = False
         self.__guild_db_list = []
         self.__open_connection_list = {}
         self.__get_config()
         self.conn_pool = None
         self.logger.info("Loaded DBConnPool")
+
+    @property
+    def guild_dbs_ready(self):
+        return self.__guild_dbs_ready
 
     @property
     def guild_db_list(self):
@@ -66,12 +71,12 @@ class DBConnPool(commands.Cog):
                 input()
                 exit(1)
 
-    async def __create_guild_member_tables(self):
+    async def __create_guild_member_tables(self, guild_name):
         async with self.conn_pool.acquire() as db_connection:
             async with db_connection.cursor() as db_cursor:
                 create_guild_member_table_query = """
                 CREATE TABLE IF NOT EXISTS guild_members (
-                    discord_user_id INT NOT NULL,
+                    discord_user_id VARCHAR(18) NOT NULL,
                     discord_username VARCHAR(37),
                     memberships TEXT,
                     verified BOOLEAN,
@@ -79,7 +84,7 @@ class DBConnPool(commands.Cog):
                 )"""
                 create_guild_verification_table_query = """
                 CREATE TABLE IF NOT EXISTS member_verification (
-                    discord_user_id INT NOT NULL,
+                    discord_user_id VARCHAR(18) NOT NULL,
                     email VARCHAR(320),
                     verification_key CHAR(10),
                     last_verification_req DATETIME,
@@ -88,10 +93,9 @@ class DBConnPool(commands.Cog):
                 """
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    for guild_db_name in self.guild_db_list:
-                        await db_cursor.execute("""USE `%s`""", guild_db_name)
-                        await db_cursor.execute(create_guild_member_table_query)
-                        await db_cursor.execute(create_guild_verification_table_query)
+                    await db_cursor.execute("""USE `%s`""", guild_name)
+                    await db_cursor.execute(create_guild_member_table_query)
+                    await db_cursor.execute(create_guild_verification_table_query)
 
     async def __create_guild_databases(self, guild_list):
         """This coroutine will create databases for guilds with regular
@@ -99,70 +103,56 @@ class DBConnPool(commands.Cog):
         searches for databases of names corresponding to their guild,
         then databases will be made for all queries that return nothing.
         """
-        guild_table_names = []
+        guild_database_names = []
         for guild in guild_list:
-            guild_table_names.append("guild_"+str(guild.id))
+            guild_database_names.append("guild_"+str(guild.id))
         async with self.conn_pool.acquire() as db_connection:
             async with db_connection.cursor() as db_cursor:
-                tab_search_query = """SELECT SCHEMA_NAME
-                    FROM information_schema.SCHEMATA
-                    WHERE SCHEMA_NAME = %s"""
-                await db_cursor.execute(
-                    tab_search_query,
-                    "all_user_db"
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    tab_search_query = """SELECT SCHEMA_NAME
+                        FROM information_schema.SCHEMATA
+                        WHERE SCHEMA_NAME = %s;"""
+                    await db_cursor.execute(
+                        tab_search_query,
+                        "'all_user_db'"
+                    )
+                    if not bool(await db_cursor.fetchmany()):
+                        await db_cursor.execute(
+                            """CREATE DATABASE IF NOT EXISTS `%s`""",
+                            "all_user_db"
+                        )
 
-                await db_cursor.executemany(
-                    tab_search_query,
-                    guild_table_names
-                )
-                db_check_results = await db_cursor.fetchmany()
-                db_to_create = []
-                for i in range(len(db_check_results)):
-                    db_to_create.append(guild_table_names[i])
-                await db_cursor.executemany(
-                    """CREATE DATABASE `%s`""",
-                    db_to_create
-                )
+                    await db_cursor.executemany(
+                        tab_search_query,
+                        guild_database_names
+                    )
+                    db_check_results = await db_cursor.fetchmany()
+                    db_to_create = []
+                    for i in range(len(db_check_results)):
+                        db_to_create.append(guild_database_names[i])
+                    self.logger.debug(f"Creating databases for {db_to_create}")
+                    await db_cursor.executemany(
+                        """CREATE DATABASE IF NOT EXISTS `%s`""",
+                        guild_database_names
+                    )
         seen_guilds = set(self.guild_db_list)
-        for guild_db_name in guild_table_names:
+        for guild_db_name in guild_database_names:
             if guild_db_name not in seen_guilds:
-                self.__guild_db_list.append(guild_table_names)
+                await self.__create_guild_member_tables(guild_db_name)
+                self.__guild_db_list.append(guild_database_names)
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.__acquire_db_pool()
-        await self.__create_guild_databases(self.bot.guilds)
-        await self.__create_guild_member_tables()
+        if not self.guild_dbs_ready:
+            await self.__create_guild_databases(self.bot.guilds)
+            self.__guild_dbs_ready = True
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
         self.logger.debug(f"Joined guild {guild.name} ({guild.id})")
         await self.__create_guild_databases([guild])
-        await self.__create_guild_member_tables()
-
-    # @tasks.loop(seconds=30)
-    # async def __ping_all_connections(self):
-    #     """Ongoing task that slims down the number of connection objects within
-    #     this pool, all free connections will be removed, every three minutes,
-    #     all inactive connections that are not free (unused for over 15 seconds)
-    #     will be released and made "free" connections, all connections that have
-    #     been used minimally in the last three minutes will be pinged and have a
-    #     reconnect attempt made."""
-    #     # Close all "free" connections
-    #     await self.__local_conn_pool.clear()
-    #     self.logger.debug("Connection maintenance loop.")
-    #     # Iterate and release, or ping all "in-use" connections
-    #     for connection, old_last_used in self.__open_connection_list.items():
-    #         if connection.last_used - old_last_used > 15:
-    #             # We're going to release connections that have been unused for
-    #             # over 15 seconds.
-    #             self.__local_conn_pool.release(connection)
-    #             del self.__open_connection_list[connection]
-    #             self.logger.info("Released connection due to inactivity")
-    #         else:
-    #             await connection.ping(reconnect=True)
-    #             self.__open_connection_list[connection] = deepcopy(connection.last_usage)
 
     async def __acquire_db_pool(self):
         if self.conn_pool is None:
@@ -171,6 +161,13 @@ class DBConnPool(commands.Cog):
                     **self.cog_config["_db"]
                 )
                 self.logger.info("Database connection pool acquired")
+                async with self.conn_pool.acquire() as encoding_fix_conn:
+                    async with encoding_fix_conn.cursor() as encoding_fix_cursor:
+                        await encoding_fix_cursor.execute(
+                            """SET GLOBAL character_set_server = 'utf8mb4';
+                            SET GLOBAL collation_server = 'utf8_general_ci';
+                            SET GLOBAL init_connect='utf8mb4'"""
+                        )
             except BaseException as connection_exception:
                 self.logger.exception(f"Exception when connecting to database:"
                                       f"\n{connection_exception}\n\n "
