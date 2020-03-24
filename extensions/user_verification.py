@@ -70,7 +70,7 @@ class UserVerification(commands.Cog, name="User Verification"):
                     f"In order to verify, you will need to provide a University of "
                     f"Southampton (@soton.ac.uk) email address in this DM.\n\n"
                     f"The command will look like:\n"
-                    f"`{self.cmd_prefix}verify <your_soton_email_address> {guild_alias}`."
+                    f"`{self.cmd_prefix}verify email <your_soton_email_address> {guild_alias}`."
                 )
             except commands.errors.CommandInvokeError:
                 self.logger.warning(f"Unable to message {member.name}")
@@ -92,14 +92,14 @@ class UserVerification(commands.Cog, name="User Verification"):
                         f"In order to verify, you will need to provide a University of "
                         f"Southampton (@soton.ac.uk) email address in this DM.\n\n"
                         f"The command will look something like:\n"
-                        f"`{self.cmd_prefix}verify <your_soton_email_address> {guild_alias}`."
+                        f"`{self.cmd_prefix}verify email <your_soton_email_address> {guild_alias}`."
                     )
                 except commands.errors.CommandInvokeError:
                     self.logger.warning(f"Unable to message {member.name}")
                     await ctx.send(f"Unable to DM verification instructions to: {member.name} "
                                    f"({member.id}).")
 
-    async def __generate_user_verification_code(self, *ingredients):
+    async def __generate_user_verification_code(self, guild_alias, *ingredients):
         code_length = 21
         bytes_ingredient_string = str(ingredients)
         hash_raw_hex_out = hashlib.sha256(bytes_ingredient_string.encode()).hexdigest()
@@ -112,11 +112,24 @@ class UserVerification(commands.Cog, name="User Verification"):
                 out_string += "-"
             else:
                 out_string += hash_raw_hex_out[char_index-1]
-        return "VERIFY-"+out_string.upper()+"-SVGE"
+        return "VERIFY-"+out_string.upper()+"-"+guild_alias.upper()
 
-    @commands.command()
+    @commands.group()
     @commands.dm_only()
-    async def verify(self, ctx, email_address, pre_verification_id):
+    async def verify(self, ctx):
+        """Command group for user verification, does nothing when invoked
+        directly."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send(f"You need to use a subcommand with this command group.\n\n"
+                           f"Use `{self.cmd_prefix}help verify to see child commands.")
+
+    @verify.command()
+    async def code(self, ctx, verification_code):
+        pass
+
+    @verify.command()
+    @commands.max_concurrency(1, per=commands.BucketType.user)
+    async def email(self, ctx, email_address, pre_verification_id):
         """Allows users to begin the verification process in a given discord guild.
 
         :param ctx: Command context, internally provided.
@@ -189,6 +202,7 @@ class UserVerification(commands.Cog, name="User Verification"):
 
                 user_verification_result[3] = command_datetime
                 verification_code = await self.__generate_user_verification_code(
+                    self.db_pool_cog.cog_config["guild_aliases_reversed"][guild_id],
                     str(command_datetime), str(ctx.author.id), guild_table_name
                 )
                 self.logger.debug(f"Generated verification code: {verification_code}.")
