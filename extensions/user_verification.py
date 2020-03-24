@@ -141,7 +141,7 @@ class UserVerification(commands.Cog, name="User Verification"):
                 )
                 user_verification_result = await cursor.fetchone()
                 verification_request_timediff = command_datetime - user_verification_result[3]
-                if verification_request_timediff > datetime.timedelta(minutes=1):
+                if verification_request_timediff < datetime.timedelta(minutes=1):
                     await ctx.send("Please wait before attempting to resend this command, "
                                    "if you have been waiting over 15 minutes for your "
                                    "verification email, please contact an administrator.")
