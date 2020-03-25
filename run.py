@@ -25,16 +25,21 @@ async def on_message(message):
     try:
         if message.content.startswith(svgebot.bot_config["cmd_prefix"]):
             async with message.channel.typing():
-                await message.delete()
+                if message.channel != message.author.dm_channel:
+                    await message.delete()
                 logger.debug(f"Command: '{message.content}' from: '{message.author}'")
                 await svgebot.process_commands(message)
     except commands.errors.CheckFailure as check_fail:
-        logger.debug("User {0} sent the command {1}, which failed "
-                     "command checks with: \n{2}".format(message.author,
-                                                         message.content,
-                                                         check_fail))
+        logger.info("User {0} sent the command {1}, which failed "
+                    "command checks with: \n{2}".format(message.author,
+                                                        message.content,
+                                                        check_fail))
         await message.channel.send("You do not have the permissions "
                                    "required for this command",
+                                   delete_after=svgebot.delete_msg_after)
+    except commands.errors.CommandNotFound as cmd_not_found:
+        logger.debug(f"Command Not Found Error: \n{cmd_not_found}.")
+        await message.channel.send(f'Command "{message.content}" does not exist.',
                                    delete_after=svgebot.delete_msg_after)
 
 
@@ -47,7 +52,15 @@ if __name__ == "__main__":
         print("Created ./logs/ folder for persistent logging")
 
     logger = logging.getLogger("SVGEBot")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
+
+    if not os.path.exists("./config/temp_config.json"):
+        copyfile("./config/temp_config_default.json", "./config/temp_config.json")
+        logger.warning("Config was missing, copied config template")
+
+    with open("./config/temp_config.json", "r") as config_file:
+        temp_config_json = json.load(config_file)
+
     formatter = logging.Formatter('[{asctime}] [{levelname:}] {name}: {message}',
                                   '%Y-%m-%d %H:%M:%S', style='{')
 
@@ -63,12 +76,21 @@ if __name__ == "__main__":
 
     logger.debug("Logging ready")
 
-    if not os.path.exists("./config/temp_config.json"):
-        copyfile("./config/temp_config_default.json", "./config/temp_config.json")
-        logger.warning("Config was missing, copied config template")
+    possible_logging_levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARN,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
+    }
 
-    with open("./config/temp_config.json", "r") as config_file:
-        temp_config_json = json.load(config_file)
+    try:
+        logger.setLevel(possible_logging_levels[temp_config_json["logging_level"]])
+    except KeyError:
+        logger.exception("Selected logging level not supported")
+        input()
+        exit(1)
+
     if temp_config_json["bot"]["delete_msg_after"] == -1:
         temp_config_json["bot"]["delete_msg_after"] = None
     logger.debug("Loaded config variables")

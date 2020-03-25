@@ -1,0 +1,12 @@
+{
+    "_db": {
+        "host": "localhost",
+        "port": 3306,
+        "user": "",
+        "password": "",
+        "connect_timeout": 30,
+        "autocommit": true,
+        "charset": "utf8mb4"
+    },
+    "guild_aliases": {}
+}
