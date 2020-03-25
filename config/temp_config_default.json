@@ -20,6 +20,7 @@
         "extensions.member_monitoring",
         "extensions.db_conn",
         "extensions.user_verification",
-        "extensions.member_monitoring"
+        "extensions.member_monitoring",
+        "extensions.react_for_role"
     ]
 }
