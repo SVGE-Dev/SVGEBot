@@ -89,12 +89,13 @@ class DBConnPool(commands.Cog):
                     discord_username VARCHAR(37),
                     memberships TEXT,
                     verified BOOLEAN,
+                    modifiers TEXT,
                     PRIMARY KEY ( discord_user_id )
                 )"""
                 create_guild_verification_table_query = """
                 CREATE TABLE IF NOT EXISTS member_verification (
                     discord_user_id VARCHAR(18) NOT NULL,
-                    email VARCHAR(320),
+                    email VARCHAR(320) UNIQUE,
                     verification_key VARCHAR(64),
                     last_verification_req DATETIME,
                     PRIMARY KEY ( discord_user_id )
