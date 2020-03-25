@@ -15,7 +15,7 @@ class DBConnPool(commands.Cog):
     pool. This is a dependency cog and should not contain any commands
     for the end user.
 
-    Ideally please use the "with... as..." implementation of self.acquire()
+    Ideally please use the "with... as..." implementation of self.conn_pool.acquire()
     as this will automatically release the connection once you are done using it,
     saving time and space from the calamity of all ten connections in the pool being
     in active use.
