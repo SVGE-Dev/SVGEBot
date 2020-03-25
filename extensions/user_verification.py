@@ -27,6 +27,9 @@ class UserVerification(commands.Cog, name="User Verification"):
     def cmd_prefix(self):
         return self.bot.bot_config['cmd_prefix']
 
+    def cog_unload(self):
+        self.logger.info("Unloaded UserVerification")
+
     def __get_config(self, run_counter=0):
         # This function needs to be moved into a shared extension, and likely will be soon.
         # Currently a duplicate exists within ./extensions/db_conn.py
