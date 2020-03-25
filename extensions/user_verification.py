@@ -119,6 +119,8 @@ class UserVerification(commands.Cog, name="User Verification"):
                 )
             except commands.errors.CommandInvokeError:
                 self.logger.warning(f"Unable to message {member.name}")
+        else:
+            await self.__member_verify_update(member.id, member.guild.id)
 
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
