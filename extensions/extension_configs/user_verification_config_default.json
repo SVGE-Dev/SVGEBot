@@ -9,6 +9,8 @@
         "password": ""
     },
     "discord": {
-        "verified_role_id": 0
+        "verified_role_ids": {
+            "guild_id": "role_id"
+        }
     }
 }
