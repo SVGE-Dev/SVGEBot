@@ -19,8 +19,8 @@ class UserVerification(commands.Cog, name="User Verification"):
         self.bot = bot
         self.db_pool_cog = None
         self.__cog_config = None
-        self.__get_config()
         self.logger = logging.getLogger("SVGEBot.Verification")
+        self.__get_config()
         self.logger.info("Loaded User Verification")
 
     @property
