@@ -13,7 +13,7 @@ class ColourMeCog(commands.Cog, name="Custom Colours"):
     """
     def __init__(self, bot):
         self.bot = bot
-        self.logger = logging.getLogger("CustomColours")
+        self.logger = logging.getLogger("SVGEBot.CustomColours")
         self.delete_message_after = self.bot.bot_config["delete_msg_after"]
         self.cog_config = self._get_cog_config
         self.logger.info("Loaded CustomColours")
@@ -217,6 +217,8 @@ class ColourMeCog(commands.Cog, name="Custom Colours"):
 
         self.logger.debug(f"Assigned colour role: {new_colour_role.name} to "
                           f"{ctx.message.author.name}#{ctx.message.author.discriminator}.")
+
+        await ctx.author.send(f"Your custom colour {colour_hex} has been created and assigned.")
 
         await self._clean_colour_roles(ctx.guild)
 
