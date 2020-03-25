@@ -86,7 +86,7 @@ class UserVerification(commands.Cog, name="User Verification"):
                     ON DUPLICATE KEY UPDATE discord_username=(%(d_uname)s);
                     INSERT INTO member_verification (
                         discord_user_id, email, verification_key, last_verification_req
-                    ) VALUES (%(d_uid)s, NULL, '', %(datetime_old)s)
+                    ) VALUES (%(d_uid)s, NULL, NULL, %(datetime_old)s)
                     ON DUPLICATE KEY UPDATE discord_user_id=discord_user_id""",
                     {"d_uid": member.id, "d_uname": member.name+"#"+member.discriminator,
                      "datetime_old": datetime.datetime(2000, 1, 1)}
