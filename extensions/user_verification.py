@@ -173,7 +173,15 @@ class UserVerification(commands.Cog, name="User Verification"):
     async def __member_verify_update(self, target_user_id, guild_id):
         guild_object = self.bot.get_guild(int(guild_id))
         member_object = guild_object.get_member(target_user_id)
-        verify_role_object = guild_object.get_role(self.__cog_config["discord"]["verified_role_id"])
+        role_id = self.__cog_config["discord"]["verified_role_ids"][str(guild_id)]
+        try:
+            verify_role_object = guild_object.get_role(role_id)
+        except KeyError:
+            self.logger.exception("Unable to find verification role.")
+            return False
+        if verify_role_object is None:
+            self.logger.exception(f"Couldn't find role {role_id}")
+            return False
 
         try:
             await member_object.add_roles(verify_role_object)
