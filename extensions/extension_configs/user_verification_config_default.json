@@ -1,0 +1,14 @@
+{
+    "email": {
+        "use_tls": true,
+        "hostname": "",
+        "port": 465
+    },
+    "account": {
+        "login": "",
+        "password": ""
+    },
+    "discord": {
+        "verified_role_id": 0
+    }
+}
