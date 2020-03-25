@@ -104,8 +104,8 @@ class DBConnPool(commands.Cog):
                 react_for_role_table_query = """
                 CREATE TABLE IF NOT EXISTS react_for_role (
                     message_id VARCHAR(18) UNIQUE NOT NULL,
-                    role_id VARCHAR(18) UNIQUE NOT NULL,
-                    emoji_id VARCHAR(18) UNIQUE NOT NULL,
+                    role_id VARCHAR(18) NOT NULL,
+                    emoji_id VARCHAR(18) NOT NULL,
                     PRIMARY KEY ( message_id )
                 )"""
                 with warnings.catch_warnings():
