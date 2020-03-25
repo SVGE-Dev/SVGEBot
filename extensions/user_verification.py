@@ -201,7 +201,7 @@ class UserVerification(commands.Cog, name="User Verification"):
         directly."""
         if ctx.invoked_subcommand is None:
             await ctx.send(f"You need to use a subcommand with this command group.\n\n"
-                           f"Use `{self.cmd_prefix}help verify to see child commands.")
+                           f"Use `{self.cmd_prefix}help verify` to see child commands.")
 
     async def __gen_guild_id_from_verification_code(self, ctx, verification_code):
         """Pulls the related guild id from a verification_code, which contains a guild
