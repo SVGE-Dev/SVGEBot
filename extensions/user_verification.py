@@ -62,8 +62,9 @@ class UserVerification(commands.Cog, name="User Verification"):
 
         :param member: Member object to have details entered into the database
         :type member: discord.Member
-        :returns: Whether or not the member already existed
-        :rtype: bool"""
+        :returns: tuple(Whether or not the member already existed, whether they need to be given
+            the verification role)
+        :rtype: tuple(bool, bool)"""
         guild_db_name = "guild_" + str(member.guild.id)
         async with self.db_pool_cog.conn_pool.acquire() as db_conn:
             async with db_conn.cursor() as cursor:
@@ -72,33 +73,37 @@ class UserVerification(commands.Cog, name="User Verification"):
                 # verification attempt will be allowed. There is a one minute ratelimit
                 # on verification request having emails, rather than on the command scale.
                 await cursor.execute(
-                    """SELECT discord_user_id
+                    """SELECT *
                     FROM guild_members
                     WHERE discord_user_id = %s""",
                     (member.id,)
                 )
-                user_already_exists = bool(await cursor.fetchall())
+                user_result = await cursor.fetchone()
+                user_already_exists = bool(user_result)
 
-                await cursor.execute(
-                    """INSERT INTO guild_members (
-                        discord_user_id, discord_username, verified
-                    ) VALUES (%(d_uid)s, %(d_uname)s, 0) 
-                    ON DUPLICATE KEY UPDATE discord_username=(%(d_uname)s);
-                    INSERT INTO member_verification (
-                        discord_user_id, email, verification_key, last_verification_req
-                    ) VALUES (%(d_uid)s, NULL, NULL, %(datetime_old)s)
-                    ON DUPLICATE KEY UPDATE discord_user_id=discord_user_id""",
-                    {"d_uid": member.id, "d_uname": member.name+"#"+member.discriminator,
-                     "datetime_old": datetime.datetime(2000, 1, 1)}
-                )
+                if not user_already_exists:
+                    await cursor.execute(
+                        """INSERT INTO guild_members (
+                            discord_user_id, discord_username, verified
+                        ) VALUES (%(d_uid)s, %(d_uname)s, 0) 
+                        ON DUPLICATE KEY UPDATE discord_username=(%(d_uname)s);
+                        INSERT INTO member_verification (
+                            discord_user_id, email, verification_key, last_verification_req
+                        ) VALUES (%(d_uid)s, NULL, NULL, %(datetime_old)s)
+                        ON DUPLICATE KEY UPDATE discord_user_id=discord_user_id""",
+                        {"d_uid": member.id, "d_uname": member.name+"#"+member.discriminator,
+                         "datetime_old": datetime.datetime(2000, 1, 1)}
+                    )
 
-                return user_already_exists
+        user_already_verified = user_result[3] == 1
+        return user_already_exists, user_already_verified
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
         # The code contained in this conditional will execute only if the member does
         # not already exist in the guild database
-        if not await self.__add_member_to_database(member):
+        member_already_exists, member_verified = await self.__add_member_to_database(member)
+        if not member_already_exists:
             try:
                 try:
                     # Tries to pull the guild alias from the auto-generated reversed
@@ -119,7 +124,7 @@ class UserVerification(commands.Cog, name="User Verification"):
                 )
             except commands.errors.CommandInvokeError:
                 self.logger.warning(f"Unable to message {member.name}")
-        else:
+        elif member_verified:
             await self.__member_verify_update(member.id, member.guild.id)
 
     @commands.has_permissions(administrator=True)
@@ -129,7 +134,8 @@ class UserVerification(commands.Cog, name="User Verification"):
         """Bulk member scan command that will ingest all members that are not yet in
         the guild database. Sends a similar message to on_member_join listener."""
         for member in ctx.guild.members:
-            if not await self.__add_member_to_database(member):
+            member_already_exists, member_verified = await self.__add_member_to_database(member)
+            if not member_already_exists:
                 try:
                     try:
                         guild_alias = self.db_pool_cog.cog_config["guild_aliases_reversed"][
@@ -147,6 +153,8 @@ class UserVerification(commands.Cog, name="User Verification"):
                     self.logger.warning(f"Unable to message {member.name}")
                     await ctx.send(f"Unable to DM verification instructions to: {member.name} "
                                    f"({member.id}).")
+            elif member_verified:
+                await self.__member_verify_update(member.id, member.guild.id)
 
     async def __generate_user_verification_code(self, guild_alias, *ingredients):
         """Generates a user verification code based on a guild alias and
