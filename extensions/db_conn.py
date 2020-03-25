@@ -101,11 +101,19 @@ class DBConnPool(commands.Cog):
                     PRIMARY KEY ( discord_user_id )
                 )
                 """
+                react_for_role_table_query = """
+                CREATE TABLE IF NOT EXISTS react_for_role (
+                    message_id VARCHAR(18) UNIQUE NOT NULL,
+                    role_id VARCHAR(18) UNIQUE NOT NULL,
+                    emoji_id VARCHAR(18) UNIQUE NOT NULL,
+                    PRIMARY KEY ( message_id )
+                )"""
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     await db_cursor.execute("""USE `%s`""", guild_name)
                     await db_cursor.execute(create_guild_member_table_query)
                     await db_cursor.execute(create_guild_verification_table_query)
+                    await db_cursor.execute(react_for_role_table_query)
 
     async def __create_guild_databases(self, guild_list):
         """This coroutine will create databases for guilds with regular
