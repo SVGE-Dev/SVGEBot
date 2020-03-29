@@ -106,10 +106,11 @@ class DBConnPool(commands.Cog):
                     relation_id INT AUTO_INCREMENT,
                     role_id VARCHAR(18) NOT NULL,
                     emoji_id VARCHAR(18) NOT NULL,
+                    name TEXT,
                     PRIMARY KEY ( relation_id )
                 );
                 CREATE TABLE IF NOT EXISTS r_for_r_messages (
-                    r_for_r_id VARCHAR(6) NOT NULL,
+                    r_for_r_id INT AUTO_INCREMENT,
                     message_id VARCHAR(18),
                     role_emojis_in_use TEXT,
                     PRIMARY KEY ( r_for_r_id )
