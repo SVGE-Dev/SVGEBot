@@ -102,18 +102,37 @@ class DBConnPool(commands.Cog):
                 )
                 """
                 react_for_role_table_query = """
-                CREATE TABLE IF NOT EXISTS react_for_role (
-                    message_id VARCHAR(18) UNIQUE NOT NULL,
+                CREATE TABLE IF NOT EXISTS r_for_r_emoji (
+                    relation_id INT AUTO_INCREMENT,
                     role_id VARCHAR(18) NOT NULL,
                     emoji_id VARCHAR(18) NOT NULL,
-                    PRIMARY KEY ( message_id )
+                    PRIMARY KEY ( relation_id )
+                );
+                CREATE TABLE IF NOT EXISTS r_for_r_messages (
+                    r_for_r_id VARCHAR(6) NOT NULL,
+                    message_id VARCHAR(18),
+                    role_emojis_in_use TEXT,
+                    PRIMARY KEY ( r_for_r_id )
                 )"""
+                warning_table_query = """
+                CREATE TABLE IF NOT EXISTS warning_table (
+                    warning_id INT AUTO_INCREMENT,
+                    expired BOOLEAN,
+                    warned_user_id VARCHAR(18) NOT NULL,
+                    admin_user_id VARCHAR(18) NOT NULL,
+                    recent_user_messages MEDIUMTEXT,
+                    reason TEXT NOT NULL,
+                    datetime DATETIME,
+                    primary key ( warning_id )
+                )
+                """
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     await db_cursor.execute("""USE `%s`""", guild_name)
                     await db_cursor.execute(create_guild_member_table_query)
                     await db_cursor.execute(create_guild_verification_table_query)
                     await db_cursor.execute(react_for_role_table_query)
+                    await db_cursor.execute(warning_table_query)
 
     async def __create_guild_databases(self, guild_list):
         """This coroutine will create databases for guilds with regular
@@ -131,21 +150,19 @@ class DBConnPool(commands.Cog):
                     tab_search_query = """SELECT SCHEMA_NAME
                         FROM information_schema.SCHEMATA
                         WHERE SCHEMA_NAME = %s;"""
-                    await db_cursor.execute(
+                    '''await db_cursor.execute(
                         tab_search_query,
                         "'general_bot_db'"
+                    )'''
+                    await db_cursor.execute(
+                        """CREATE DATABASE IF NOT EXISTS `%(db_name)s`;
+                        USE `%(db_name)s`;
+                        CREATE TABLE IF NOT EXISTS user_tracking_table (
+                            discord_user_id VARCHAR(18) NOT NULL,
+                            PRIMARY KEY ( discord_user_id )
+                        )""",
+                        {"db_name": "general_bot_db"}
                     )
-                    if not bool(await db_cursor.fetchmany()):
-                        await db_cursor.execute(
-                            """CREATE DATABASE IF NOT EXISTS `%(db_name)s`;
-                            USE `%(db_name)s`;
-                            CREATE TABLE IF NOT EXISTS user_tracking_table (
-                                discord_user_id VARCHAR(18) NOT NULL,
-                                in_guilds TEXT,
-                                PRIMARY KEY ( discord_user_id )
-                            )""",
-                            {"db_name": "general_bot_db"}
-                        )
 
                     await db_cursor.executemany(
                         tab_search_query,
