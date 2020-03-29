@@ -15,6 +15,18 @@ from discord.ext import commands
 
 
 class UserVerification(commands.Cog, name="User Verification"):
+    """
+    Todo:
+        - Make verification process DPA2018+ compliant via flow rework
+            > Bot finds new User
+            > If User is not currently tracked in 'general_bot_db'
+                > Send message to notify User of GDPR-like process
+            > User accepts GDPR-like terms
+            > User is added to 'general_bot_db'
+            > User is added to all guild databases as required
+                > User receives verification messages as required
+            > Verification flow needs no changes after this
+    """
     def __init__(self, bot):
         self.bot = bot
         self.db_pool_cog = None
@@ -60,6 +72,20 @@ class UserVerification(commands.Cog, name="User Verification"):
         # Get the database connection pool cog
         self.db_pool_cog = self.bot.get_cog("DBConnPool")
 
+    async def __check_if_user_exists(self, user):
+        async with self.db_pool_cog.conn_pool.acquire() as db_conn:
+            async with db_conn.cursor() as cursor:
+                await cursor.execute("USE `%s`", "general_bot_db")
+                await cursor.execute(
+                    """SELECT *
+                    FROM user_tracking_table
+                    WHERE discord_user_id = %s""",
+                    (user.id,)
+                )
+                user_result = await cursor.fetchone()
+                user_already_exists = bool(user_result)
+        return user_already_exists
+
     async def __add_member_to_database(self, member):
         """Adds a member to their respective guild database
 
@@ -97,15 +123,83 @@ class UserVerification(commands.Cog, name="User Verification"):
                         {"d_uid": member.id, "d_uname": member.name+"#"+member.discriminator,
                          "datetime_old": datetime.datetime(2000, 1, 1)}
                     )
-
-        user_already_verified = user_result[3] == 1
+                    user_already_verified = False
+                else:
+                    user_already_verified = user_result[3] == 1
         return user_already_exists, user_already_verified
+
+    @commands.command(name="accept")
+    async def accept_terms(self, ctx):
+        """Command used to accept privacy and data handling agreement."""
+        if await self.__check_if_user_exists(ctx.author):
+            # Catch users that have already accepted terms and ignore
+            self.logger.debug(f"{ctx.author} ({ctx.author.id}) attempted to accept "
+                              f"privacy agreement terms but has already done so.")
+            await ctx.send("You have already accepted the Data Privacy Policy terms, if you "
+                           "think you are seeing this message in error, please contact an "
+                           "administrator.")
+            return
+
+        async with self.db_pool_cog.conn_pool.acquire() as db_conn:
+            async with db_conn.cursor() as db_cursor:
+                await db_cursor.execute("USE `%s`", "general_bot_db")
+                await db_cursor.execute("""
+                    INSERT INTO user_tracking_table 
+                    (discord_user_id)
+                    VALUES (%(d_uid)s) 
+                """, {"d_uid": ctx.author.id})
+                self.logger.debug(f"Added {ctx.author} ({ctx.author.id}) to bot recognised "
+                                  f"table.")
+
+        for guild in self.bot.guilds:
+            guild_member_object = guild.get_member(ctx.author.id)
+            if guild_member_object is not None:
+                await self.__handle_member_guild_verification_flow_start(guild_member_object)
+
+    @commands.command(hidden=True)
+    async def test_gdpr_shit(self, ctx, guild_id):
+        """Comment out after use"""
+        guild = self.bot.get_guild(int(guild_id))
+        member = guild.get_member(ctx.author.id)
+        await self.on_member_join(member)
+
+    async def __send_dpa_privacy_message(self, user):
+        await user.send(
+            f"In order for us to properly handle verification and other automated "
+            f"administrative tasks, we require your permission to handle some data "
+            f"on our own servers, which use secured and encrypted storage systems."
+            f"\n\nPlease ensure you read out Privacy and Data Handling Policy (link is "
+            f"below) before sending the `{self.cmd_prefix}accept` command in this "
+            f"direct message channel."
+            f"\n\nAll data collected and stored by this bot will be subject to a limited "
+            f"lifetime and has been provided either by yourself, or Discord via the Discord "
+            f"Application Programming Interface (API)."
+            f"\n\n<BOT DPA LINK>"
+        )
+
+    @commands.command(name="privacy")
+    async def privacy_message_command(self, ctx):
+        """Sends the bot's privacy message in DMs to the command author."""
+        await self.__send_dpa_privacy_message(ctx.author)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        # The code contained in this conditional will execute only if the member does
-        # not already exist in the guild database
-        member_already_exists, member_verified = await self.__add_member_to_database(member)
+        """This coroutine will check whether a user is already tracked by the bot, if not
+        they will be sent the privacy confirmation message and the bot will wait until
+        they accept to begin tracking them.
+
+        In the case that they already exist, add them to tracking for this specific guild."""
+        user_is_tracked = await self.__check_if_user_exists(member)
+        if not user_is_tracked:
+            await self.__send_dpa_privacy_message(member)
+        else:
+            # In this case we have a user that has definitely already given permission for
+            # their data to be stored and processed, continue with verification flow.
+            await self.__handle_member_guild_verification_flow_start(member)
+
+    async def __handle_member_guild_verification_flow_start(self, member):
+        member_already_exists, member_already_verified = await self.__add_member_to_database(
+            member)
         if not member_already_exists:
             try:
                 try:
@@ -123,11 +217,12 @@ class UserVerification(commands.Cog, name="User Verification"):
                     f"In order to verify, you will need to provide a University of "
                     f"Southampton (@soton.ac.uk) email address in this DM.\n\n"
                     f"The command will look like:\n"
-                    f"`{self.cmd_prefix}verify email <your_soton_email_address> {guild_alias}`."
+                    f"`{self.cmd_prefix}verify email <your_email_address>@soton.ac.uk"
+                    f" {guild_alias}`"
                 )
             except commands.errors.CommandInvokeError:
-                self.logger.warning(f"Unable to message {member.name}")
-        elif member_verified:
+                self.logger.warning(f"Unable to message {member}")
+        elif member_already_verified:
             await self.__member_verify_update(member.id, member.guild.id)
 
     @commands.has_permissions(administrator=True)
@@ -137,27 +232,10 @@ class UserVerification(commands.Cog, name="User Verification"):
         """Bulk member scan command that will ingest all members that are not yet in
         the guild database. Sends a similar message to on_member_join listener."""
         for member in ctx.guild.members:
-            member_already_exists, member_verified = await self.__add_member_to_database(member)
-            if not member_already_exists:
-                try:
-                    try:
-                        guild_alias = self.db_pool_cog.cog_config["guild_aliases_reversed"][
-                            member.guild.id]
-                    except KeyError:
-                        guild_alias = member.guild.id
-                    await member.send(
-                        f"You have been added to {member.guild.name}'s verification system. "
-                        f"In order to verify, you will need to provide a University of "
-                        f"Southampton (@soton.ac.uk) email address in this DM.\n\n"
-                        f"The command will look something like:\n"
-                        f"`{self.cmd_prefix}verify email <your_soton_email_address> {guild_alias}`."
-                    )
-                except commands.errors.CommandInvokeError:
-                    self.logger.warning(f"Unable to message {member.name}")
-                    await ctx.send(f"Unable to DM verification instructions to: {member.name} "
-                                   f"({member.id}).")
-            elif member_verified:
-                await self.__member_verify_update(member.id, member.guild.id)
+            if self.__check_if_user_exists(member):
+                await self.__handle_member_guild_verification_flow_start(member)
+            else:
+                await self.__send_dpa_privacy_message(member)
 
     async def __generate_user_verification_code(self, guild_alias, *ingredients):
         """Generates a user verification code based on a guild alias and
@@ -193,12 +271,28 @@ class UserVerification(commands.Cog, name="User Verification"):
                 out_string += hash_raw_hex_out[char_index-1]
         return "VERIFY-"+out_string.upper()+"-"+guild_alias.upper()
 
+    async def user_can_be_tracked(self, user):
+        async with self.db_pool_cog.conn_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("USE `'general_bot_db'`")
+                await cursor.execute("""
+                    SELECT *
+                    FROM user_tracking_table
+                    WHERE discord_user_id = %(d_uid)s
+                """, {"d_uid": user.id})
+                return bool(await cursor.fetchone())
+
     @commands.group()
     @commands.dm_only()
     @commands.max_concurrency(1, per=commands.BucketType.user)
     async def verify(self, ctx):
         """Command group for user verification, does nothing when invoked
         directly."""
+        if not await self.user_can_be_tracked(ctx.author):
+            await ctx.send(f"You have not provided consent for data processing and storage, if you "
+                           f"wish to see information on how to provide this consent, "
+                           f"please send the command: `{self.cmd_prefix}privacy`")
+            raise commands.CheckFailure("User does not allow tracking.")
         if ctx.invoked_subcommand is None:
             await ctx.send(f"You need to use a subcommand with this command group.\n\n"
                            f"Use `{self.cmd_prefix}help verify` to see child commands.")
