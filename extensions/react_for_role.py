@@ -8,7 +8,11 @@ class ReactForRole(commands.Cog, name="React for Role"):
         self.bot = bot
         self.db_conn_cog = None
         self.logger = logging.getLogger("SVGEBot.RoleReact")
-        self.logger.info("ReactForRole loaded")
+        self.logger.info("Loaded ReactForRole")
+
+    @property
+    def cmd_prefix(self):
+        return self.bot.bot_config['cmd_prefix']
 
     def cog_unload(self):
         self.logger.info("Unloaded ReactForRole")
