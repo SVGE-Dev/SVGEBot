@@ -112,7 +112,6 @@ class DBConnPool(commands.Cog):
                 CREATE TABLE IF NOT EXISTS r_for_r_messages (
                     r_for_r_id INT AUTO_INCREMENT,
                     message_id VARCHAR(18),
-                    role_emojis_in_use TEXT,
                     PRIMARY KEY ( r_for_r_id )
                 )"""
                 warning_table_query = """
