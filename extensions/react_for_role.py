@@ -50,14 +50,12 @@ class ReactForRole(commands.Cog, name="React for Role"):
         :rtype: bool"""
         async with self.db_conn_cog.conn_pool.acquire() as conn:
             async with conn.cursor() as cursor:
+                await cursor.execute("USE `%s`;", guild_db_name)
                 await cursor.execute("""
-                    SELECT count(*)
-                    FROM information_schema.TABLES
-                    WHERE (TABLE_SCHEMA = %(db_name)s) AND (TABLE_NAME = %(table_name)s)
-                """, {
-                    "db_name": guild_db_name,
-                    "table_name": self.get_rfr_table_name(rfr_msg_id)
-                })
+                    SELECT count(rfr_message_id)
+                    FROM r_for_r_messages
+                    WHERE rfr_message_id = %s;
+                """, (rfr_msg_id,))
                 return bool(await cursor.fetchone())
 
     @commands.group(name="rfr")
