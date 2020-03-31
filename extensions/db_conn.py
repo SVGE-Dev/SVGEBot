@@ -85,7 +85,7 @@ class DBConnPool(commands.Cog):
             async with db_connection.cursor() as db_cursor:
                 create_guild_member_table_query = """
                 CREATE TABLE IF NOT EXISTS guild_members (
-                    discord_user_id VARCHAR(18) NOT NULL,
+                    discord_user_id CHAR(18) NOT NULL,
                     discord_username VARCHAR(37),
                     memberships TEXT,
                     verified BOOLEAN,
@@ -94,36 +94,60 @@ class DBConnPool(commands.Cog):
                 )"""
                 create_guild_verification_table_query = """
                 CREATE TABLE IF NOT EXISTS member_verification (
-                    discord_user_id VARCHAR(18) NOT NULL,
+                    discord_user_id CHAR(18) NOT NULL,
                     email VARCHAR(320) UNIQUE,
                     verification_key VARCHAR(64),
                     last_verification_req DATETIME,
-                    PRIMARY KEY ( discord_user_id )
+                    CONSTRAINT `fk_user_id`
+                    FOREIGN KEY ( discord_user_id )
+                    REFERENCES guild_members ( discord_user_id )
+                    ON UPDATE CASCADE ON DELETE CASCADE
                 )
                 """
                 react_for_role_table_query = """
                 CREATE TABLE IF NOT EXISTS r_for_r_emoji (
-                    relation_id INT AUTO_INCREMENT,
-                    role_id VARCHAR(18) NOT NULL,
-                    emoji_id VARCHAR(18) NOT NULL,
+                    role_emoji_relation_id INT AUTO_INCREMENT,
+                    role_id CHAR(18) NOT NULL,
+                    emoji_id CHAR(18) NOT NULL,
                     name TEXT,
-                    PRIMARY KEY ( relation_id )
+                    PRIMARY KEY ( role_emoji_relation_id )
                 );
                 CREATE TABLE IF NOT EXISTS r_for_r_messages (
-                    r_for_r_id INT AUTO_INCREMENT,
-                    message_id VARCHAR(18),
-                    PRIMARY KEY ( r_for_r_id )
+                    rfr_message_id INT AUTO_INCREMENT,
+                    channel_message_id CHAR(37),
+                    PRIMARY KEY ( rfr_message_id )
+                ); 
+                CREATE TABLE IF NOT EXISTS r_for_r_emoji_to_message (
+                    rfr_message_id INT,
+                    role_emoji_relation_id INT,
+                    CONSTRAINT `fk_rfr_id`
+                    FOREIGN KEY ( rfr_message_id ) 
+                    REFERENCES r_for_r_messages ( rfr_message_id )
+                    ON DELETE CASCADE,
+                    CONSTRAINT `fk_emoji_role_id` 
+                    FOREIGN KEY ( role_emoji_relation_id )
+                    REFERENCES r_for_r_emoji ( role_emoji_relation_id )
+                    ON DELETE CASCADE,
+                    PRIMARY KEY (rfr_message_id, role_emoji_relation_id)
                 )"""
                 warning_table_query = """
                 CREATE TABLE IF NOT EXISTS warning_table (
                     warning_id INT AUTO_INCREMENT,
                     expired BOOLEAN,
-                    warned_user_id VARCHAR(18) NOT NULL,
-                    admin_user_id VARCHAR(18) NOT NULL,
+                    warned_user_id CHAR(18),
+                    admin_user_id CHAR(18),
                     recent_user_messages MEDIUMTEXT,
                     reason TEXT NOT NULL,
                     datetime DATETIME,
-                    primary key ( warning_id )
+                    CONSTRAINT `fk_warned_user_id`
+                    FOREIGN KEY ( warned_user_id )
+                    REFERENCES guild_members ( discord_user_id )
+                    ON UPDATE CASCADE ON DELETE SET NULL,
+                    CONSTRAINT `fk_admin_user_id`
+                    FOREIGN KEY ( admin_user_id )
+                    REFERENCES guild_members ( discord_user_id )
+                    ON UPDATE CASCADE ON DELETE SET NULL,
+                    PRIMARY KEY ( warning_id )
                 )
                 """
                 with warnings.catch_warnings():
