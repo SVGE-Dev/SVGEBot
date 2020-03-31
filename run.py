@@ -27,7 +27,7 @@ async def on_message(message):
             async with message.channel.typing():
                 if message.channel != message.author.dm_channel:
                     await message.delete()
-                logger.debug(f"Command: '{message.content}' from: '{message.author}'")
+                logger.info(f"Command: '{message.content}' from: '{message.author}'")
                 await svgebot.process_commands(message)
     except commands.errors.CheckFailure as check_fail:
         logger.info("User {0} sent the command {1}, which failed "
