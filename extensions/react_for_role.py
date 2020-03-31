@@ -77,12 +77,14 @@ class ReactForRole(commands.Cog, name="React for Role"):
     async def rfr_infer_id(self, ctx, id_to_infer):
         """Guild only command to set the inferred rfr_key for this guild."""
         if not await self.__check_if_rfr_table_exists("guild_"+str(ctx.guild.id), id_to_infer):
-            await ctx.send("Invalid id supplied ")
+            await ctx.send("Invalid id supplied.")
+            return None
         self.inferred_rfr_ids[ctx.guild.id] = id_to_infer
+        return id_to_infer
 
     @rfr_message_group.command(name="test")
     @commands.guild_only()
-    async def rfr_message_test(self, ctx, rfr_rel_id, target_channel: Optional[
+    async def rfr_message_test(self, ctx, rfr_rel_id: Optional[str], target_channel: Optional[
             discord.TextChannel]):
         """Create an rfr test message in the channel """
         # if channel_id is None:
@@ -98,6 +100,11 @@ class ReactForRole(commands.Cog, name="React for Role"):
         guild_db_name = "guild_"+str(ctx.guild.id)
         if target_channel is None:
             target_channel = ctx.channel
+
+        if rfr_rel_id is None:
+            rfr_rel_id = self.inferred_rfr_ids[ctx.guild.id]
+        else:
+            await self.rfr_infer_id(ctx, rfr_rel_id)
 
         if not await self.__check_if_rfr_table_exists(guild_db_name, rfr_rel_id):
             await ctx.send("You have supplied an invalid rfr identifier, please try "
@@ -143,6 +150,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
                 new_embed.set_footer(text=f"{rfr_id}_RFR-End")
             embed_list[i] = (embed_list[i][0], new_embed)
             await embed_list[i][0].edit(content=None, embed=new_embed)
+        return embed_list
 
     async def __get_all_rfr_relations(self, rfr_id, guild_db_name):
         """Returns all rfr data linked to a given rfr_id, in a List[Tuple[str, str, str]] form.
@@ -159,9 +167,10 @@ class ReactForRole(commands.Cog, name="React for Role"):
                 await cursor.execute("""
                     SELECT role_id, emoji_id, name
                     FROM r_for_r_emoji
-                    INNER JOIN `%(rfr_rel_list_table)s`
-                    ON r_for_r_emoji.relation_id = `%(rfr_rel_list_table)s`.rfr_relation_id
-                """, {"rfr_rel_list_table": self.get_rfr_table_name(rfr_id)})
+                    INNER JOIN r_for_r_emoji_to_message
+                    ON r_for_r_emoji.role_emoji_relation_id = 
+                    r_for_r_emoji_to_message.role_emoji_relation_id
+                """)
                 return await cursor.fetchall()
 
     @rfr_message_group.command(name="create")
@@ -173,7 +182,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
             async with connection.cursor() as cursor:
                 await cursor.execute("USE `%s`", guild_db_name)
                 await cursor.execute("""
-                    INSERT INTO r_for_r_messages (r_for_r_id, message_id) 
+                    INSERT INTO r_for_r_messages (rfr_message_id, channel_message_id) 
                     VALUES (NULL, NULL);
                 """)
                 await cursor.execute("SELECT LAST_INSERT_ID();")
@@ -195,7 +204,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
         :param rfr_name: Name of rfr relation
         :param ctx: Command context
 
-        :return: rfr relation_id or None.
+        :return: rfr emoji role relation_id or None.
         :rtype: Union[int, NoneType]"""
         guild_db_name = "guild_"+str(ctx.guild.id)
         emoji_object = self.bot.get_emoji(int(emoji_id))
@@ -212,7 +221,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
                 await cursor.execute("USE `%s`", guild_db_name)
                 await cursor.execute("""
                     INSERT INTO r_for_r_emoji
-                    (relation_id, role_id, emoji_id, name) VALUES 
+                    (role_emoji_relation_id, role_id, emoji_id, name) VALUES 
                     (DEFAULT, %(role_id)s, %(emoji_id)s, %(rfr_name)s);
                 """, {"role_id": role_id, "emoji_id": emoji_id, "rfr_name": rfr_name})
                 await cursor.execute("SELECT LAST_INSERT_ID()")
@@ -231,28 +240,12 @@ class ReactForRole(commands.Cog, name="React for Role"):
         :param role: Role to add to rfr
         :param rfr_name: Name of rfr relation
         """
-        # split_addition = addition.split(",")
-        # if len(split_addition) > 3 or len(split_addition) == 0:
-        #     self.logger.debug(f"Addition parameter was passed as {addition}, "
-        #                       f"upon splitting yielded: {split_addition}.")
-        #     await ctx.send("Invalid `addition` argument supplied.",
-        #                    delete_after=self.bot.delete_msg_after)
-        #     return
         guild_db_name = "guild_"+str(ctx.guild.id)
-        # Figure out on which conditional path we need to go
-        # need_to_make_new_rfr_relation = len(split_addition) == 3
-        # if need_to_make_new_rfr_relation:
-        #     rfr_relation_id = await self.__create_new_rfr_relation(*split_addition, ctx)
-        #     if rfr_relation_id is None:
-        #         return
-        # else:
-        #     rfr_relation_id = addition
-
         if type(emoji) is str:
             emoji = await commands.EmojiConverter().convert(ctx, emoji.strip(":"))
 
-        rfr_relation_id = await self.__create_new_rfr_relation(emoji.id, role.id, rfr_name, ctx)
-
+        role_emoji_relation_id = await self.__create_new_rfr_relation(emoji.id, role.id,
+                                                                      rfr_name, ctx)
         # Check whether or not the addressed rfr message exists
         if not bool(await self.__check_if_rfr_table_exists(guild_db_name, rfr_msg_id)):
             await ctx.send("You have supplied an invalid rfr identifier, please try "
@@ -263,10 +256,11 @@ class ReactForRole(commands.Cog, name="React for Role"):
             async with connection.cursor() as cursor:
                 await cursor.execute("USE `%s`", guild_db_name)
                 await cursor.execute("""
-                    INSERT INTO `%s` (rfr_relation_id)
-                    VALUES (%s)
-                    ON DUPLICATE KEY UPDATE rfr_relation_id=rfr_relation_id
-                """, (self.get_rfr_table_name(rfr_msg_id), rfr_relation_id))
+                    INSERT INTO r_for_r_emoji_to_message 
+                    (rfr_message_id, role_emoji_relation_id)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE rfr_message_id=rfr_message_id
+                """, (rfr_msg_id, role_emoji_relation_id,))
         await ctx.send(f'Added emoji: "{emoji}" to rfr '
                        f'message with ID: "{rfr_msg_id}." To test how this message will look, '
                        f'send: `>>rfr message test {rfr_msg_id}` in a private channel.',
