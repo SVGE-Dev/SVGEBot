@@ -220,7 +220,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
 
     @rfr_message_group.command(name="add")
     @commands.guild_only()
-    async def rfr_message_add_rfr(self, ctx, rfr_msg_id: str, emoji: discord.Emoji,
+    async def rfr_message_add_rfr(self, ctx, rfr_msg_id: str, emoji: Union[discord.Emoji, str],
                                   role: discord.Role, *, rfr_name: str):
         """Add either a pre-existing rfr relation or a new rfr relation
         to a preexisting rfr message.
@@ -247,6 +247,10 @@ class ReactForRole(commands.Cog, name="React for Role"):
         #         return
         # else:
         #     rfr_relation_id = addition
+
+        if type(emoji) is str:
+            emoji = await commands.EmojiConverter().convert(ctx, emoji.strip(":"))
+
         rfr_relation_id = await self.__create_new_rfr_relation(emoji.id, role.id, rfr_name, ctx)
 
         # Check whether or not the addressed rfr message exists
