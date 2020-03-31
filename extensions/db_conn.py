@@ -101,7 +101,8 @@ class DBConnPool(commands.Cog):
                     CONSTRAINT `fk_user_id`
                     FOREIGN KEY ( discord_user_id )
                     REFERENCES guild_members ( discord_user_id )
-                    ON UPDATE CASCADE ON DELETE CASCADE
+                    ON UPDATE CASCADE ON DELETE CASCADE,
+                    PRIMARY KEY ( discord_user_id )
                 )
                 """
                 react_for_role_table_query = """
@@ -109,12 +110,17 @@ class DBConnPool(commands.Cog):
                     role_emoji_relation_id INT AUTO_INCREMENT,
                     role_id CHAR(18) NOT NULL,
                     emoji_id CHAR(18) NOT NULL,
-                    name TEXT,
-                    PRIMARY KEY ( role_emoji_relation_id )
+                    name VARCHAR(64),
+                    PRIMARY KEY ( 
+                        role_emoji_relation_id,
+                        role_id,
+                        emoji_id,
+                        name 
+                    )
                 );
                 CREATE TABLE IF NOT EXISTS r_for_r_messages (
                     rfr_message_id INT AUTO_INCREMENT,
-                    channel_message_id CHAR(37),
+                    channel_message_id CHAR(37) UNIQUE,
                     PRIMARY KEY ( rfr_message_id )
                 ); 
                 CREATE TABLE IF NOT EXISTS r_for_r_emoji_to_message (
