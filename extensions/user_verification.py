@@ -156,12 +156,12 @@ class UserVerification(commands.Cog, name="User Verification"):
             if guild_member_object is not None:
                 await self.__handle_member_guild_verification_flow_start(guild_member_object)
 
-    @commands.command(hidden=True)
-    async def test_gdpr_shit(self, ctx, guild_id):
-        """Comment out after use"""
-        guild = self.bot.get_guild(int(guild_id))
-        member = guild.get_member(ctx.author.id)
-        await self.on_member_join(member)
+    # @commands.command(hidden=True)
+    # async def test_gdpr_shit(self, ctx, guild_id):
+    #     """Comment out after use"""
+    #     guild = self.bot.get_guild(int(guild_id))
+    #     member = guild.get_member(ctx.author.id)
+    #     await self.on_member_join(member)
 
     async def __send_dpa_privacy_message(self, user):
         await user.send(
