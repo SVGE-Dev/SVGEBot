@@ -40,7 +40,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
                 return True
         return False
 
-    async def __check_if_rfr_table_exists(self, guild_db_name, rfr_msg_id):
+    async def __check_if_rfr_id_exists(self, guild_db_name, rfr_msg_id):
         """Function to check whether a given rfr_emoji table exists or not.
 
         :param guild_db_name: Name of guild database
@@ -74,7 +74,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
     @commands.guild_only()
     async def rfr_infer_id(self, ctx, id_to_infer):
         """Guild only command to set the inferred rfr_key for this guild."""
-        if not await self.__check_if_rfr_table_exists("guild_"+str(ctx.guild.id), id_to_infer):
+        if not await self.__check_if_rfr_id_exists("guild_" + str(ctx.guild.id), id_to_infer):
             await ctx.send("Invalid id supplied.")
             return None
         self.inferred_rfr_ids[ctx.guild.id] = id_to_infer
@@ -104,7 +104,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
         else:
             await self.rfr_infer_id(ctx, rfr_rel_id)
 
-        if not await self.__check_if_rfr_table_exists(guild_db_name, rfr_rel_id):
+        if not await self.__check_if_rfr_id_exists(guild_db_name, rfr_rel_id):
             await ctx.send("You have supplied an invalid rfr identifier, please try "
                            "again", delete_after=self.bot.delete_msg_after)
             return
@@ -168,7 +168,9 @@ class ReactForRole(commands.Cog, name="React for Role"):
                     INNER JOIN r_for_r_emoji_to_message
                     ON r_for_r_emoji.role_emoji_relation_id = 
                     r_for_r_emoji_to_message.role_emoji_relation_id
-                """)
+                    AND r_for_r_emoji_to_message.rfr_message_id = 
+                    %s
+                """, rfr_id)
                 return await cursor.fetchall()
 
     @rfr_message_group.command(name="create")
@@ -227,8 +229,8 @@ class ReactForRole(commands.Cog, name="React for Role"):
 
     @rfr_message_group.command(name="add")
     @commands.guild_only()
-    async def rfr_message_add_rfr(self, ctx, rfr_msg_id: str, emoji: Union[discord.Emoji, str],
-                                  role: discord.Role, *, rfr_name: str):
+    async def rfr_message_add_rfr(self, ctx, rfr_msg_id: Optional[int], emoji: Union[
+            discord.Emoji, str], role: discord.Role, *, rfr_name: str):
         """Add either a pre-existing rfr relation or a new rfr relation
         to a preexisting rfr message.
 
@@ -242,10 +244,15 @@ class ReactForRole(commands.Cog, name="React for Role"):
         if type(emoji) is str:
             emoji = await commands.EmojiConverter().convert(ctx, emoji.strip(":"))
 
+        if rfr_msg_id is None:
+            rfr_msg_id = self.inferred_rfr_ids[ctx.guild.id]
+        else:
+            await self.rfr_infer_id(ctx, rfr_msg_id)
+
         role_emoji_relation_id = await self.__create_new_rfr_relation(emoji.id, role.id,
                                                                       rfr_name, ctx)
         # Check whether or not the addressed rfr message exists
-        if not bool(await self.__check_if_rfr_table_exists(guild_db_name, rfr_msg_id)):
+        if not bool(await self.__check_if_rfr_id_exists(guild_db_name, rfr_msg_id)):
             await ctx.send("You have supplied an invalid rfr identifier, please try "
                            "again", delete_after=self.bot.delete_msg_after)
             return
