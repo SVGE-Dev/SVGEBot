@@ -1,6 +1,7 @@
 import math
 import re
 import logging
+import asyncio
 
 from typing import Union, Optional, List, Tuple
 
@@ -12,6 +13,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
     def __init__(self, bot):
         self.bot = bot
         self.inferred_rfr_ids = {}
+        self.rfr_message_sets = {}
         self.db_conn_cog = None
         self.logger = logging.getLogger("SVGEBot.RoleReact")
         self.logger.info("Loaded ReactForRole")
@@ -29,12 +31,132 @@ class ReactForRole(commands.Cog, name="React for Role"):
             await self.__update_rfr_embeds(ctx, rfr_id_used)
 
     @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload):
+        user = await self.bot.fetch_user(payload.user_id)
+        if user.bot:
+            return
+
+        channel = await self.bot.fetch_channel(payload.channel_id)
+        guild = channel.guild
+        rfr_emoji_list = await self.__gather_rfr_emoji(guild)
+        if str(payload.emoji.id) not in rfr_emoji_list:
+            return
+
+        reaction_message = await channel.fetch_message(payload.message_id)
+        reaction_rfr_id = None
+        for rfr_id, message_set in self.rfr_message_sets[guild.id].items():
+            message_set_msg_ids = [message.id for message in message_set]
+            if reaction_message.id in message_set_msg_ids:
+                reaction_rfr_id = rfr_id
+                break
+
+        if reaction_rfr_id is None:
+            return
+
+        role_id = await self.get_reaction_role_id(payload.emoji.id, guild, reaction_rfr_id)
+        role_obj = guild.get_role(int(role_id))
+
+        await guild.get_member(payload.user_id).remove_roles(role_obj)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
+        if payload.member.bot:
+            return
+
+        rfr_emoji_list = await self.__gather_rfr_emoji(payload.member.guild)
+        if str(payload.emoji.id) not in rfr_emoji_list:
+            return
+
+        self.logger.debug(payload)
+        reaction_rfr_id = None
+        reaction_channel = payload.member.guild.get_channel(int(payload.channel_id))
+        reaction_message = await reaction_channel.fetch_message(int(payload.message_id))
+        for rfr_id, message_set in self.rfr_message_sets[payload.member.guild.id].items():
+            message_set_msg_ids = [message.id for message in message_set]
+            if reaction_message.id in message_set_msg_ids:
+                reaction_rfr_id = rfr_id
+                break
+
+        if reaction_rfr_id is None:
+            return
+
+        role_id = await self.get_reaction_role_id(payload.emoji.id, payload.member.guild, reaction_rfr_id)
+
+        self.logger.debug(role_id)
+
+        role_to_add_obj = payload.member.guild.get_role(int(role_id))
+        await payload.member.add_roles(role_to_add_obj, reason="RFR Assignment")
+
+    async def get_reaction_role_id(self, emoji_id, guild, rfr_id):
+        async with self.db_conn_cog.conn_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("USE `%s`", self.guild_db_name(guild))
+                await cursor.execute("""
+                    SELECT role_id
+                    FROM r_for_r_emoji
+                    INNER JOIN r_for_r_emoji_to_message
+                    ON r_for_r_emoji.role_emoji_relation_id = r_for_r_emoji_to_message.role_emoji_relation_id
+                    AND r_for_r_emoji_to_message.rfr_message_id = %s
+                    WHERE emoji_id = %s
+                """, (rfr_id, emoji_id,))
+                return (await cursor.fetchone())[0]
+
+    @commands.Cog.listener()
     async def on_ready(self):
         self.db_conn_cog = self.bot.get_cog("DBConnPool")
+        await asyncio.sleep(0.5)
+        for guild in self.bot.guilds:
+            valid_rfr = await self.__get_valid_rfr_ids(guild)
+            self.rfr_message_sets[guild.id] = {}
+            try:
+                await self.__rfr_infer_id_internal(guild, valid_rfr[0], None)
+            except IndexError:
+                pass
+            await self.__update_rfr_message_list(valid_rfr, guild)
+        self.logger.debug(self.rfr_message_sets)
+
+    async def __update_rfr_message_list(self, rfr_id_list, guild):
+        for rfr_id in rfr_id_list:
+            self.rfr_message_sets[guild.id][rfr_id] = await self.__collect_rfr_messages(rfr_id, None, guild)
+
+    async def __get_valid_rfr_ids(self, guild: discord.Guild):
+        async with self.db_conn_cog.conn_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("USE `%s`", self.guild_db_name(guild))
+                await cursor.execute("""
+                SELECT rfr_message_id
+                FROM r_for_r_messages
+                WHERE channel_message_id is not NULL
+                """)
+                valid_rfr = await cursor.fetchall()
+                if valid_rfr is None:
+                    await cursor.execute("""
+                        SELECT rfr_message_id
+                        FROM r_for_r_messages
+                    """)
+                    return await cursor.fetchall()
+                else:
+                    return [rfr_id[0] for rfr_id in valid_rfr]
 
     @staticmethod
     def get_rfr_table_name(rfr_id):
         return f"rfr_emoji_{str(rfr_id)}"
+
+    async def __gather_rfr_emoji(self, guild: discord.Guild) -> List[discord.Emoji]:
+        guild_db_name = self.guild_db_name(guild)
+        async with self.db_conn_cog.conn_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("USE `%s`", guild_db_name)
+                await cursor.execute("""
+                    SELECT emoji_id
+                    FROM r_for_r_emoji
+                """)
+                result_list = await cursor.fetchall()
+        emoji_return_list = []
+        for result in result_list:
+            emoji_return_list.append(result[0])
+
+        return emoji_return_list
 
     async def cog_check(self, ctx):
         """This method is a cog wide check to ensure users have "admin" roles,
@@ -90,10 +212,17 @@ class ReactForRole(commands.Cog, name="React for Role"):
     async def rfr_infer_id(self, ctx, id_to_infer: str):
         """Guild only command to set the inferred rfr_key for this guild."""
         # self.logger.debug(id_to_infer)
-        if not await self.__check_if_rfr_id_exists(self.guild_db_name(ctx.guild), int(id_to_infer)):
-            await ctx.send("Invalid id supplied.")
+        return await self.__rfr_infer_id_internal(ctx.guild, int(id_to_infer), ctx)
+
+    async def __rfr_infer_id_internal(self, guild, id_to_infer, ctx: Optional[commands.Context]):
+        if not await self.__check_if_rfr_id_exists(self.guild_db_name(guild), int(id_to_infer)):
+            if ctx is not None:
+                await ctx.send("Invalid id supplied.")
             return None
-        self.inferred_rfr_ids[ctx.guild.id] = int(id_to_infer)
+        if ctx is not None:
+            self.inferred_rfr_ids[ctx.guild.id] = int(id_to_infer)
+        else:
+            self.inferred_rfr_ids[guild.id] = int(id_to_infer)
         # self.logger.debug(str(self.inferred_rfr_ids[ctx.guild.id]))
         return int(id_to_infer)
 
@@ -128,7 +257,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
 
         await self.__create_rfr(ctx, rfr_rel_id, guild_db_name, target_channel, ctx.guild)
 
-    async def __collect_rfr_messages(self, ctx, rfr_id):
+    async def __collect_rfr_messages(self, rfr_id, ctx: Optional[commands.Context], guild: Optional[discord.Guild]):
         """Collects and returns a list of rfr embed messages.
 
         :param ctx: Command context
@@ -136,9 +265,12 @@ class ReactForRole(commands.Cog, name="React for Role"):
 
         :returns: List of discord.Message or None if no messages found.
         :rtype: Union[List[discord.Message], NoneType]"""
+        guild = ctx.guild if ctx is not None else guild
+        if guild is None:
+            return
         async with self.db_conn_cog.conn_pool.acquire() as connection:
             async with connection.cursor() as cursor:
-                await cursor.execute("USE `%s`", self.guild_db_name(ctx.guild))
+                await cursor.execute("USE `%s`", self.guild_db_name(guild))
                 await cursor.execute("""
                     SELECT channel_message_id
                     FROM r_for_r_messages
@@ -150,21 +282,30 @@ class ReactForRole(commands.Cog, name="React for Role"):
                 if lead_rfr_message_id is None:
                     # await ctx.send("Supplied rfr ID invalid.",
                     #                delete_after=self.bot.delete_msg_after)
-                    return None
+                    return
         # Now we have a valid rfr_id and possibly valid message ID that should point to the first
         # message in the chain of RFR messages.
         rfr_message_list = []
-        rfr_message = await commands.MessageConverter().convert(ctx, lead_rfr_message_id)
+        rfr_channel = None
+        if ctx is not None:
+            rfr_message = await commands.MessageConverter().convert(ctx, lead_rfr_message_id)
+        else:
+            rfr_channel = guild.get_channel(int(lead_rfr_message_id.split("-")[0]))
+            rfr_message = await rfr_channel.fetch_message(lead_rfr_message_id.split("-")[1])
         if rfr_message is None:
             await ctx.send("Contained rfr leading message ID invalid.")
         rfr_message_embed = rfr_message.embeds[0]
         rfr_message_list.append(rfr_message)
         embed_footer = rfr_message_embed.footer.text
         while "RFR-End" not in embed_footer:
+            if ctx is not None:
+                rfr_message = await commands.MessageConverter().convert(ctx, embed_footer.split("_")[1])
+            else:
+                rfr_message = await rfr_channel.fetch_message(embed_footer.split("-")[1])
             rfr_message_embed = rfr_message.embeds[0]
             embed_footer = rfr_message_embed.footer.text
-            rfr_message = await commands.MessageConverter().convert(ctx, embed_footer.split("_")[1])
             rfr_message_list.append(rfr_message)
+        self.logger.debug(rfr_message_list)
         return rfr_message_list
 
     async def __update_rfr_embeds(self, ctx, rfr_id: Optional[int]):
@@ -175,7 +316,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
             rfr_id = await self.rfr_infer_id(ctx, str(rfr_id))
             if rfr_id is None:
                 return
-        rfr_message_list = await self.__collect_rfr_messages(ctx, rfr_id)
+        rfr_message_list = await self.__collect_rfr_messages(ctx, rfr_id, None)
         if rfr_message_list is None:
             # await ctx.send(f"There is no RFR message associated with the RFR ID: `{rfr_id}` "
             #                f"`{self.cmd_prefix}rfr message send [rfr_id] <channel_id>`")
@@ -229,21 +370,36 @@ class ReactForRole(commands.Cog, name="React for Role"):
             embed = embed_msg_list[embed_message_index][0]
             emoji_indicies_added = []
             for emoji_to_add_index in range(len(rfr_restruct["emoji_ids"])):
-                if len(embed.fields) == 20:
+                if len(embed.fields) == 18:
                     self.logger.debug("Embed full, moving on to next")
-                    if embed_message_index == len(embed_msg_list) and len(rfr_restruct["emoji_ids"]) > 0:
+                    if embed_message_index == len(embed_msg_list) - 1 and len(rfr_restruct["emoji_ids"]) > 0:
                         num_fields_required = len(rfr_restruct["emoji_ids"])
-                        num_embeds_required = math.ceil(num_fields_required / 20)
+                        num_embeds_required = math.ceil(num_fields_required / 18)
                         placeholder_messages = [await rfr_channel.send("RFR Placeholder") for _ in
                                                 range(num_embeds_required)]
+                        embed_msg_list[-1][0].set_footer(
+                            text=f"{rfr_id}_{placeholder_messages[0].channel.id}-{placeholder_messages[0].id}")
+                        await embed_msg_list[-1][1].edit(content=None, embed=embed_msg_list[-1][0])
                         for i in range(len(placeholder_messages)):
-                            if i == len(placeholder_messages):
+                            role_emoji_name_tuple_list = []
+                            for j in range(len(rfr_restruct["emoji_ids"])):
+                                if j == 18:
+                                    break
+                                role = rfr_restruct["role_ids"][j]
+                                emoji = rfr_restruct["emoji_ids"][j]
+                                name = rfr_restruct["names"][j]
+                                role_emoji_name_tuple_list.append((role, emoji, name))
+                            for index in range(len(role_emoji_name_tuple_list)):
+                                del rfr_restruct["role_ids"][index]
+                                del rfr_restruct["emoji_ids"][index]
+                                del rfr_restruct["names"][index]
+                            if i == len(placeholder_messages) - 1:
                                 new_embed = await self.__create_new_rfr_embed(ctx, placeholder_messages[i], None,
-                                                                              rfr_id, rfr_relations)
+                                                                              rfr_id, role_emoji_name_tuple_list)
                             else:
                                 new_embed = await self.__create_new_rfr_embed(ctx, placeholder_messages[i],
                                                                               placeholder_messages[i+1], rfr_id,
-                                                                              rfr_relations)
+                                                                              role_emoji_name_tuple_list)
                             embed_msg_list.append((new_embed, placeholder_messages[i]))
                     break
                 curr_emoji = await commands.EmojiConverter().convert(ctx, rfr_restruct["emoji_ids"][emoji_to_add_index])
@@ -256,15 +412,19 @@ class ReactForRole(commands.Cog, name="React for Role"):
                                 value=f"{curr_emoji} "
                                       f"{curr_role.mention}",
                                 inline=True)
+                emoji_indicies_added.append(emoji_to_add_index)
                 await embed_msg_list[embed_message_index][1].add_reaction(curr_emoji)
-            for value_list in rfr_restruct.values():
-                for emoji_index in emoji_indicies_added:
+
+            for emoji_index in emoji_indicies_added:
+                for value_list in rfr_restruct.values():
                     del value_list[emoji_index]
 
         # Now we have edited and created where required, time to push these changes onto the
         # placeholder messages.
         for embed, message in embed_msg_list:
             await message.edit(content=None, embed=embed)
+
+        await self.__update_rfr_message_list(rfr_id, ctx.guild)
 
         return embed_msg_list
 
@@ -276,7 +436,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
         new_embed = discord.Embed(title=f"SVGEBot RfR",
                                   description="React for Role Interface",
                                   colour=0x6b2b2b)
-        if len(role_emoji_rfrname_list) > 20:
+        if len(role_emoji_rfrname_list) > 18:
             return None
 
         for role, emoji, name in role_emoji_rfrname_list:
@@ -329,15 +489,26 @@ class ReactForRole(commands.Cog, name="React for Role"):
                            guild: discord.Guild):
         role_emoji_name_tuple_list = await self.__get_all_rfr_relations(rfr_id, guild_db_name)
         # Because each message can only support up to a maximum of 20 reactions, we must split
-        # the rfr into separate embeds and messages as required.
+        # the rfr into separate embeds and messages as required. To make things look nice, we're
+        # going to cap out at 18
         num_fields_required = len(role_emoji_name_tuple_list)
-        num_embeds_required = math.ceil(num_fields_required / 20)
+        num_embeds_required = math.ceil(num_fields_required / 18)
         rfr_list_offset = 0
         embed_list = []  # type: List
         for i in range(num_embeds_required):
             embed_list.append((await target_channel.send("RFR Placeholder"), None))
 
         channel_message_id_list = []
+
+        rfrs_to_add = []
+        start_index_offset = 0
+        for i in range(len(embed_list)):
+            rfrs_to_add.append([])
+            for j in range(start_index_offset, len(role_emoji_name_tuple_list)):
+                if j == 18 + start_index_offset:
+                    start_index_offset += j
+                    break
+                rfrs_to_add[i].append(role_emoji_name_tuple_list[j])
 
         for i in range(len(embed_list)):
             curr_message_obj = embed_list[i][0]
@@ -346,7 +517,7 @@ class ReactForRole(commands.Cog, name="React for Role"):
             else:
                 next_message = None
             new_embed = await self.__create_new_rfr_embed(ctx, curr_message_obj, next_message, rfr_id,
-                                                          role_emoji_name_tuple_list)
+                                                          rfrs_to_add[i])
 
             await curr_message_obj.edit(content=None, embed=new_embed)
             embed_list[i] = (curr_message_obj, new_embed)
@@ -472,12 +643,43 @@ class ReactForRole(commands.Cog, name="React for Role"):
                        f'send: `>>rfr message test {rfr_id}` in a private channel.',
                        delete_after=self.bot.delete_msg_after)
 
-    @react_for_role_group.command()
+    @rfr_message_group.command(name="remove", aliases=["delete"])
+    @commands.guild_only()
+    async def rfr_message_remove_rfr(self, ctx, role: discord.Role):
+
+        guild_db_name = self.guild_db_name(ctx.guild)
+
+        # if type(emoji) is str:
+        #     # Handles external emoji when user lacks nitro
+        #     emoji_or_role = await commands.EmojiConverter().convert(ctx, emoji_or_role.strip(":"))
+
+        async with self.db_conn_cog.conn_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("USE `%s`", guild_db_name)
+                await cursor.execute("""
+                    DELETE FROM r_for_r_emoji
+                    WHERE role_id = %s
+                """, (str(role.id),))
+                # if isinstance(emoji_or_role, discord.Emoji):
+                #     await cursor.execute("""
+                #         DELETE FROM r_for_r_emoji
+                #         WHERE emoji_id = %s
+                #     """, (str(emoji_or_role.id),))
+                # elif isinstance(emoji_or_role, discord.Role):
+                #     await cursor.execute("""
+                #         DELETE FROM r_for_r_emoji
+                #         WHERE role_id = %s
+                #     """, (str(emoji_or_role.id),))
+                # else:
+                #     await ctx.send("Invalid role or emoji supplied.", delete_after=self.bot.delete_msg_after)
+
+    # Currently doesn't work for some reason
+    @react_for_role_group.command(name="add")
     @commands.guild_only()
     async def rfr_emoji_add_shortcut(self, ctx, rfr_id: Optional[int], emoji: Union[
             discord.Emoji, str], role: discord.Role, *, rfr_name: Optional[str]):
         """Shortcut command to add an emoji to a RFR, """
-        await self.rfr_message_add_rfr(ctx, rfr_id, emoji, role, rfr_name)
+        await ctx.invoke(rfr_id, emoji, role, rfr_name)
 
 
 def setup(bot):
