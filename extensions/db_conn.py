@@ -89,8 +89,22 @@ class DBConnPool(commands.Cog):
                     discord_username VARCHAR(37),
                     memberships TEXT,
                     verified BOOLEAN,
-                    modifiers TEXT,
-                    PRIMARY KEY ( discord_user_id )
+                PRIMARY KEY ( discord_user_id ));
+                CREATE TABLE IF NOT EXISTS modifier_table (
+                    modifier_id TINYINT AUTO_INCREMENT,
+                    modifier_name VARCHAR(32),
+                PRIMARY KEY ( modifier_id )
+                );
+                CREATE TABLE IF NOT EXISTS guild_member_modifiers (
+                    discord_user_id CHAR(18) NOT NULL,
+                    modifier_id TINYINT,
+                    expires DATETIME,
+                    expired BOOLEAN,
+                    CONSTRAINT `fk_mem_mod_user_id`
+                    FOREIGN KEY ( discord_user_id )
+                    REFERENCES guild_members ( discord_user_id )
+                    ON UPDATE CASCADE ON DELETE CASCADE,
+                    PRIMARY KEY ( discord_user_id, modifier_id )
                 )"""
                 create_guild_verification_table_query = """
                 CREATE TABLE IF NOT EXISTS member_verification (
@@ -98,7 +112,7 @@ class DBConnPool(commands.Cog):
                     email VARCHAR(320) UNIQUE,
                     verification_key VARCHAR(64),
                     last_verification_req DATETIME,
-                    CONSTRAINT `fk_user_id`
+                    CONSTRAINT `fk_verif_user_id`
                     FOREIGN KEY ( discord_user_id )
                     REFERENCES guild_members ( discord_user_id )
                     ON UPDATE CASCADE ON DELETE CASCADE,
@@ -111,12 +125,7 @@ class DBConnPool(commands.Cog):
                     role_id CHAR(18) NOT NULL,
                     emoji_id CHAR(18) NOT NULL,
                     name VARCHAR(64),
-                    PRIMARY KEY ( 
-                        role_emoji_relation_id,
-                        role_id,
-                        emoji_id,
-                        name 
-                    )
+                    PRIMARY KEY ( role_emoji_relation_id )
                 );
                 CREATE TABLE IF NOT EXISTS r_for_r_messages (
                     rfr_message_id INT AUTO_INCREMENT,
