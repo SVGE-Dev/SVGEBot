@@ -1,0 +1,21 @@
+{
+    "warning_expiry_time": {
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 3,
+        "years": 0
+    },
+    "warn_non_members": false,
+    "warning_behaviour": {
+        "mute": 1,
+        "kick": 2,
+        "ban": 3
+    },
+    "mute_length": {
+        "minutes": 0,
+        "hours": 0,
+        "days": 1,
+        "weeks": 0
+    }
+}
